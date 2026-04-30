@@ -178,5 +178,91 @@ export const swaggerDocument = {
         },
       },
     },
+    '/judge/me': {
+      get: {
+        tags: ['Judge'],
+        summary: 'Get judge profile',
+        responses: {
+          200: { description: 'Judge details retrieved' },
+        },
+      },
+    },
+    '/judge/submissions': {
+      get: {
+        tags: ['Judge'],
+        summary: 'List submissions assigned to judge',
+        parameters: [
+          {
+            name: 'stage',
+            in: 'query',
+            schema: { type: 'number' },
+          },
+        ],
+        responses: {
+          200: { description: 'Submissions retrieved' },
+        },
+      },
+    },
+    '/judge/stage-2/score': {
+      post: {
+        tags: ['Judge'],
+        summary: 'Submit score for a stage 2 submission',
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  submissionId: { type: 'string' },
+                  innovation: { type: 'number' },
+                  feasibility: { type: 'number' },
+                  impact: { type: 'number' },
+                  presentation: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Score submitted' },
+        },
+      },
+    },
+    '/admin/overview': {
+      get: {
+        tags: ['Admin'],
+        summary: 'Get competition overview metrics',
+        responses: {
+          200: { description: 'Overview retrieved' },
+        },
+      },
+    },
+    '/admin/users': {
+      get: {
+        tags: ['Admin'],
+        summary: 'List all users',
+        responses: {
+          200: { description: 'Users retrieved' },
+        },
+      },
+    },
+    '/admin/teams': {
+      get: {
+        tags: ['Admin'],
+        summary: 'List all teams',
+        responses: {
+          200: { description: 'Teams retrieved' },
+        },
+      },
+    },
+    '/admin/submissions': {
+      get: {
+        tags: ['Admin'],
+        summary: 'List all submissions',
+        responses: {
+          200: { description: 'Submissions retrieved' },
+        },
+      },
+    }
   },
 };
