@@ -8,6 +8,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   role: 'student' | 'admin' | 'judge';
+  email_verified_at: string | null;
 }
 
 declare global {
@@ -55,6 +56,7 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
       id: currentUser.id,
       email: currentUser.email,
       role: currentUser.role,
+      email_verified_at: currentUser.email_verified_at ?? null,
     };
 
     next();

@@ -96,16 +96,14 @@ export class AuthRepository {
   }
 
   /**
-   * Mark a user as verified (email verification complete).
+   * Mark a user's email as verified without changing document verification state.
    */
-  async markVerified(userId: string): Promise<DbUser> {
+  async markEmailVerified(userId: string): Promise<DbUser> {
     const supabase = getSupabaseService();
     const { data, error } = await supabase
       .from('users')
       .update({
-        verification_status: 'verified',
-        verification_method: 'manual',
-        verification_timestamp: new Date().toISOString(),
+        email_verified_at: new Date().toISOString(),
       } as never)
       .eq('id', userId)
       .select()

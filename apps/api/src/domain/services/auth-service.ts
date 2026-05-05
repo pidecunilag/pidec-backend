@@ -148,7 +148,7 @@ export class AuthService {
    * Verify a user's email address (marks as verified in DB).
    */
   async verifyEmail(userId: string): Promise<DbUser> {
-    return this.authRepository.markVerified(userId);
+    return this.authRepository.markEmailVerified(userId);
   }
 
   /**

@@ -299,13 +299,14 @@ export const me: RequestHandler = (req, res) => {
   res.status(200).json({
     status: 'success',
     data: {
-      user: {
-        id: req.user.id,
-        email: req.user.email,
-        role: req.user.role,
+        user: {
+          id: req.user.id,
+          email: req.user.email,
+          role: req.user.role,
+          emailVerifiedAt: req.user.email_verified_at ?? null,
+        },
       },
-    },
-  });
+    });
 };
 
 /**

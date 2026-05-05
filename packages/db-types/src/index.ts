@@ -81,6 +81,7 @@ export interface DbUser {
   id: string;
   name: string;
   email: string;
+  email_verified_at: string | null;
   matric_number: string;
   department: string;
   level: number;
@@ -303,6 +304,7 @@ type EditionDefaults =
   | 'deleted_at';
 
 type UserDefaults =
+  | 'email_verified_at'
   | 'verification_status'
   | 'verification_method'
   | 'verification_timestamp'
