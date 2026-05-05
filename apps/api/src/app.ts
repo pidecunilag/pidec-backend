@@ -39,6 +39,18 @@ export const createApp = (): Express => {
   app.use(originCheckMiddleware);
   app.use(responseEnvelopeMiddleware);
 
+  app.get('/', (_req, res) => {
+    res.status(200).json({
+      status: 'success',
+      data: {
+        service: 'PIDEC API',
+        version: 'v1',
+        health: '/api/v1/health',
+        docs: '/api-docs',
+      },
+    });
+  });
+
   // API Documentation (Swagger)
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
     customSiteTitle: 'PIDEC API Documentation',
