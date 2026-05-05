@@ -8,6 +8,7 @@ import {
 import { AppError } from '../../shared/errors/app-error.js';
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { logger } from '../../shared/logger/index.js';
+import { env } from '../../shared/config/env.js';
 
 export interface VerificationStatusView {
   status: 'pending' | 'verified' | 'rejected' | 'flagged' | 'suspended';
@@ -247,7 +248,7 @@ export class VerificationWorkflowService {
         { to: user.email, name: user.name },
         {
           recipientName: user.name,
-          dashboardUrl: `${process.env.WEB_URL || 'http://localhost:3000'}/dashboard`,
+          dashboardUrl: `${env.APP_URL}/dashboard`,
         },
       );
       return;
@@ -262,7 +263,7 @@ export class VerificationWorkflowService {
           reason: result.reason ?? 'Document details did not match your registration details.',
           attemptNumber: attempts,
           attemptsRemaining: Math.max(0, VERIFICATION_LIMITS.MAX_ATTEMPTS - attempts),
-          reuploadUrl: `${process.env.WEB_URL || 'http://localhost:3000'}/auth/register`,
+          reuploadUrl: `${env.APP_URL}/auth/register`,
         },
       );
       return;
@@ -272,7 +273,7 @@ export class VerificationWorkflowService {
       { to: user.email, name: user.name },
       {
         recipientName: user.name,
-        dashboardUrl: `${process.env.WEB_URL || 'http://localhost:3000'}/dashboard`,
+        dashboardUrl: `${env.APP_URL}/dashboard`,
       },
     );
 

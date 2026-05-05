@@ -7,8 +7,11 @@ import {
   TEAM_LIMITS,
 } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
+import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
+import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/index.js';
+import { env } from '../../shared/config/env.js';
 
 const getActiveEdition = async () => {
   const supabase = getSupabaseService() as any;
@@ -50,6 +53,41 @@ const getTeam = async (teamId: string) => {
   if (error) throw error;
   if (!data) throw AppError.notFound('Team not found');
   return data;
+};
+
+const getTeamMembers = async (teamId: string) => {
+  const supabase = getSupabaseService() as any;
+  const { data, error } = await supabase
+    .from('users')
+    .select('id,name,email')
+    .eq('team_id', teamId)
+    .is('deleted_at', null);
+
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; name: string; email: string }>;
+};
+
+const queueSubmissionEmails = (teamId: string, teamName: string, stage: 1 | 2 | 3, submittedAt: string) => {
+  fireAndForget(
+    (async () => {
+      const members = await getTeamMembers(teamId);
+      await Promise.allSettled(
+        members.map((member) =>
+          getEmailService().sendSubmissionConfirmed(
+            { to: member.email, name: member.name },
+            {
+              recipientName: member.name,
+              teamName,
+              stage,
+              submittedAt,
+              dashboardUrl: `${env.APP_URL}/dashboard`,
+            },
+          ),
+        ),
+      );
+    })(),
+    `submission confirmed emails for team ${teamId}`,
+  );
 };
 
 const assertLeaderCanSubmit = async (userId: string, expectedStage: 1 | 2 | 3) => {
@@ -201,6 +239,7 @@ export const submitStage1: RequestHandler = async (req, res, next) => {
       { submissionId: submission.id, teamId: team.id, stage: 1 },
       'Stage 1 submission created',
     );
+    queueSubmissionEmails(team.id, team.name, 1, submission.submitted_at);
 
     res.status(201).json({
       status: 'success',
@@ -263,6 +302,7 @@ export const submitStage2: RequestHandler = async (req, res, next) => {
       { submissionId: submission.id, teamId: team.id, stage: 2 },
       'Stage 2 submission created',
     );
+    queueSubmissionEmails(team.id, team.name, 2, submission.submitted_at);
 
     res.status(201).json({
       status: 'success',
@@ -323,6 +363,7 @@ export const submitStage3: RequestHandler = async (req, res, next) => {
       { submissionId: submission.id, teamId: team.id, stage: 3 },
       'Stage 3 submission created',
     );
+    queueSubmissionEmails(team.id, team.name, 3, submission.submitted_at);
 
     res.status(201).json({
       status: 'success',

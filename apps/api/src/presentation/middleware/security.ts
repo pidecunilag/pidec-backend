@@ -32,6 +32,7 @@ export const corsMiddleware: RequestHandler = cors({
 
 const allowedOrigins = new Set(env.CORS_ORIGIN.split(',').map((origin) => origin.trim()));
 const stateChangingMethods = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+const allowedHosts = new Set([...allowedOrigins].map((origin) => new URL(origin).host));
 
 export const originCheckMiddleware: RequestHandler = (req, _res, next) => {
   if (!stateChangingMethods.has(req.method)) {
@@ -39,16 +40,37 @@ export const originCheckMiddleware: RequestHandler = (req, _res, next) => {
     return;
   }
 
-  const origin = req.headers.origin;
-  if (!origin) {
+  const hasBearerToken = req.headers.authorization?.startsWith('Bearer ');
+  if (hasBearerToken) {
     next();
     return;
   }
 
-  if (!allowedOrigins.has(origin)) {
-    next(AppError.forbidden('Origin is not allowed for this action'));
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+
+  if (origin) {
+    if (!allowedOrigins.has(origin)) {
+      next(AppError.forbidden('Origin is not allowed for this action'));
+      return;
+    }
+
+    next();
     return;
   }
 
-  next();
+  if (referer) {
+    try {
+      const refererHost = new URL(referer).host;
+      if (allowedHosts.has(refererHost)) {
+        next();
+        return;
+      }
+    } catch {
+      next(AppError.forbidden('Referer is invalid for this action'));
+      return;
+    }
+  }
+
+  next(AppError.forbidden('Origin or Referer header is required for cookie-authenticated writes'));
 };

@@ -1,7 +1,12 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../../shared/config/env.js';
 
-const JWT_SECRET = env.SUPABASE_SERVICE_ROLE_KEY; // Use service role key as JWT secret
+const devAccessSecret = 'dev-access-token-secret-change-me-before-production-1234';
+const devRefreshSecret = 'dev-refresh-token-secret-change-me-before-production-5678';
+const ACCESS_TOKEN_SECRET = env.AUTH_ACCESS_TOKEN_SECRET ?? devAccessSecret;
+const REFRESH_TOKEN_SECRET = env.AUTH_REFRESH_TOKEN_SECRET ?? devRefreshSecret;
+const ACCESS_TOKEN_AUDIENCE = 'pidec-access';
+const REFRESH_TOKEN_AUDIENCE = 'pidec-refresh';
 
 export interface JwtPayload {
   sub: string; // user ID
@@ -21,8 +26,13 @@ const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days (in seconds)
 export const generateAccessToken = (payload: Omit<JwtPayload, 'type' | 'iat' | 'exp'>): string => {
   return jwt.sign(
     { ...payload, type: 'access' },
-    JWT_SECRET,
-    { expiresIn: ACCESS_TOKEN_EXPIRY }, // in seconds
+    ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: ACCESS_TOKEN_EXPIRY,
+      issuer: env.AUTH_TOKEN_ISSUER,
+      audience: ACCESS_TOKEN_AUDIENCE,
+      subject: payload.sub,
+    },
   );
 };
 
@@ -32,8 +42,13 @@ export const generateAccessToken = (payload: Omit<JwtPayload, 'type' | 'iat' | '
 export const generateRefreshToken = (payload: Omit<JwtPayload, 'type' | 'iat' | 'exp'>): string => {
   return jwt.sign(
     { ...payload, type: 'refresh' },
-    JWT_SECRET,
-    { expiresIn: REFRESH_TOKEN_EXPIRY }, // in seconds
+    REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: REFRESH_TOKEN_EXPIRY,
+      issuer: env.AUTH_TOKEN_ISSUER,
+      audience: REFRESH_TOKEN_AUDIENCE,
+      subject: payload.sub,
+    },
   );
 };
 
@@ -43,7 +58,27 @@ export const generateRefreshToken = (payload: Omit<JwtPayload, 'type' | 'iat' | 
  */
 export const verifyToken = (token: string): JwtPayload => {
   try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.decode(token);
+    if (!decoded || typeof decoded !== 'object' || !('type' in decoded)) {
+      throw new Error('Token payload is malformed');
+    }
+
+    const tokenType = decoded.type;
+    if (tokenType === 'access') {
+      return jwt.verify(token, ACCESS_TOKEN_SECRET, {
+        issuer: env.AUTH_TOKEN_ISSUER,
+        audience: ACCESS_TOKEN_AUDIENCE,
+      }) as JwtPayload;
+    }
+
+    if (tokenType === 'refresh') {
+      return jwt.verify(token, REFRESH_TOKEN_SECRET, {
+        issuer: env.AUTH_TOKEN_ISSUER,
+        audience: REFRESH_TOKEN_AUDIENCE,
+      }) as JwtPayload;
+    }
+
+    throw new Error('Unsupported token type');
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Invalid token';
     throw new Error(`Token verification failed: ${message}`);

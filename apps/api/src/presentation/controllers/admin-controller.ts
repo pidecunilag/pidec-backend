@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { type RequestHandler } from 'express';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
+import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
+import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
 import { AppError } from '../../shared/errors/app-error.js';
+import { env } from '../../shared/config/env.js';
 
 const tokenAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const generateTokenString = (): string => {
@@ -23,6 +26,32 @@ const getActiveEdition = async () => {
   if (error) throw error;
   if (!data) throw AppError.notFound('No active edition configured');
   return data;
+};
+
+const getTeamMembers = async (teamId: string) => {
+  const supabase = getSupabaseService() as any;
+  const { data, error } = await supabase
+    .from('users')
+    .select('id,name,email')
+    .eq('team_id', teamId)
+    .is('deleted_at', null);
+
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; name: string; email: string }>;
+};
+
+const queueTeamEmailFanout = (
+  teamId: string,
+  context: string,
+  buildTask: (member: { id: string; name: string; email: string }) => Promise<unknown>,
+) => {
+  fireAndForget(
+    (async () => {
+      const members = await getTeamMembers(teamId);
+      await Promise.allSettled(members.map((member) => buildTask(member)));
+    })(),
+    context,
+  );
 };
 
 const escapeCsvCell = (value: unknown): string => {
@@ -978,6 +1007,15 @@ export const verificationDecision: RequestHandler = async (req, res, next) => {
     };
 
     const supabase = getSupabaseService() as any;
+    const { data: existingUser, error: existingUserError } = await supabase
+      .from('users')
+      .select('id,name,email')
+      .eq('id', userId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (existingUserError) throw existingUserError;
+    if (!existingUser) throw AppError.notFound('User not found');
 
     const patch =
       decision === 'approve'
@@ -1005,6 +1043,44 @@ export const verificationDecision: RequestHandler = async (req, res, next) => {
       .single();
 
     if (error) throw error;
+
+    if (decision === 'approve') {
+      fireAndForget(
+        getEmailService().sendVerificationApproved(
+          { to: existingUser.email, name: existingUser.name },
+          {
+            recipientName: existingUser.name,
+            dashboardUrl: `${env.APP_URL}/dashboard`,
+          },
+        ),
+        'manual verification approval email',
+      );
+    } else if (decision === 'reject') {
+      fireAndForget(
+        getEmailService().sendVerificationRejected(
+          { to: existingUser.email, name: existingUser.name },
+          {
+            recipientName: existingUser.name,
+            reason: reason ?? 'Your verification could not be approved.',
+            attemptNumber: 0,
+            attemptsRemaining: 0,
+            reuploadUrl: `${env.APP_URL}/auth/register`,
+          },
+        ),
+        'manual verification rejection email',
+      );
+    } else {
+      fireAndForget(
+        getEmailService().sendVerificationFlagged(
+          { to: existingUser.email, name: existingUser.name },
+          {
+            recipientName: existingUser.name,
+            dashboardUrl: `${env.APP_URL}/dashboard`,
+          },
+        ),
+        'manual verification flagged email',
+      );
+    }
 
     res.status(200).json({ status: 'success', data: { user: data } });
   } catch (err) {
@@ -1085,6 +1161,7 @@ export const applyTeamAction: RequestHandler = async (req, res, next) => {
       if (!team) throw AppError.notFound('Team not found');
 
       const nextStage = Math.min(3, team.current_stage + 1);
+      const advancedStage = nextStage === 2 ? 2 : 3;
       const { data, error } = await supabase
         .from('teams')
         .update({ current_stage: nextStage } as never)
@@ -1092,10 +1169,30 @@ export const applyTeamAction: RequestHandler = async (req, res, next) => {
         .select('*')
         .single();
       if (error) throw error;
+      queueTeamEmailFanout(teamId, 'team advanced emails', (member) =>
+        getEmailService().sendStageAdvanced(
+          { to: member.email, name: member.name },
+          {
+            recipientName: member.name,
+            teamName: team.name,
+            newStage: advancedStage,
+            dashboardUrl: `${env.APP_URL}/dashboard`,
+          },
+        ),
+      );
       return res.status(200).json({ status: 'success', data: { team: data } });
     }
 
     if (action === 'disqualify') {
+      const { data: teamRecord, error: teamRecordError } = await supabase
+        .from('teams')
+        .select('id,name')
+        .eq('id', teamId)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (teamRecordError) throw teamRecordError;
+      if (!teamRecord) throw AppError.notFound('Team not found');
+
       const { data, error } = await supabase
         .from('teams')
         .update({
@@ -1109,6 +1206,17 @@ export const applyTeamAction: RequestHandler = async (req, res, next) => {
         .single();
 
       if (error) throw error;
+      queueTeamEmailFanout(teamId, 'team disqualified emails', (member) =>
+        getEmailService().sendTeamDisqualified(
+          { to: member.email, name: member.name },
+          {
+            recipientName: member.name,
+            teamName: teamRecord.name,
+            stage: atStage ?? 1,
+            reason: reason ?? 'Your team has been disqualified.',
+          },
+        ),
+      );
       return res.status(200).json({ status: 'success', data: { team: data } });
     }
 
@@ -1353,6 +1461,33 @@ export const publishFeedback: RequestHandler = async (req, res, next) => {
       .in('id', submissionIds);
 
     if (submissionStatusError) throw submissionStatusError;
+
+    const { data: feedbackRecipients, error: feedbackRecipientsError } = await supabase
+      .from('submissions')
+      .select('id,stage,teams!inner(id,name), users!submissions_submitted_by_fkey(id,name,email)')
+      .in('id', submissionIds)
+      .is('deleted_at', null);
+
+    if (feedbackRecipientsError) throw feedbackRecipientsError;
+
+    for (const row of feedbackRecipients ?? []) {
+      const recipient = (row as { users?: { name?: string; email?: string } | null }).users;
+      const team = (row as { teams?: { name?: string } | null }).teams;
+      if (!recipient?.email || !recipient.name || !team?.name) continue;
+
+      fireAndForget(
+        getEmailService().sendFeedbackPublished(
+          { to: recipient.email, name: recipient.name },
+          {
+            recipientName: recipient.name,
+            teamName: team.name,
+            stage: (row as { stage: 1 | 2 | 3 }).stage,
+            feedbackUrl: `${env.APP_URL}/dashboard/feedback`,
+          },
+        ),
+        `feedback published email for submission ${(row as { id: string }).id}`,
+      );
+    }
 
     res.status(200).json({ status: 'success', data: { feedback: data ?? [] } });
   } catch (err) {

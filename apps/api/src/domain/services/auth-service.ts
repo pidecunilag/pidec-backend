@@ -12,6 +12,7 @@ import { getEmailService } from '../../infrastructure/email/resend-email-service
 import { AppError } from '../../shared/errors/app-error.js';
 import type { DbUser } from '@pidec/db-types';
 import { ERROR_CODES } from '@pidec/shared';
+import { env } from '../../shared/config/env.js';
 
 export interface AuthTokens {
   accessToken: string;
@@ -164,7 +165,7 @@ export class AuthService {
       { to: userEmail, name: userName },
       {
         recipientName: userName,
-        verificationLink: `${process.env.WEB_URL || 'http://localhost:3000'}/auth/verify-email?token=${token}`,
+        verificationLink: `${env.APP_URL}/auth/verify-email?token=${token}`,
       },
     );
 
@@ -233,7 +234,7 @@ export class AuthService {
       { to: user.email, name: user.name },
       {
         recipientName: user.name,
-        resetLink: `${process.env.WEB_URL || 'http://localhost:3000'}/auth/reset-password?token=${token}`,
+        resetLink: `${env.APP_URL}/auth/reset-password?token=${token}`,
       },
     );
 

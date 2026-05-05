@@ -11,9 +11,13 @@ const EnvSchema = z.object({
 
   API_PORT: z.coerce.number().int().positive().default(process.env.PORT ? parseInt(process.env.PORT) : 4000),
   API_HOST: z.string().min(1).default('0.0.0.0'),
+  APP_URL: z.string().url().default('http://localhost:3000'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:3000'),
   COOKIE_DOMAIN: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  AUTH_TOKEN_ISSUER: z.string().min(1).default('pidec-api'),
+  AUTH_ACCESS_TOKEN_SECRET: z.string().min(32).optional(),
+  AUTH_REFRESH_TOKEN_SECRET: z.string().min(32).optional(),
 
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
@@ -43,6 +47,23 @@ if (!parsed.success) {
   // eslint-disable-next-line no-console
   console.error('❌ Invalid API environment:', parsed.error.flatten().fieldErrors);
   process.exit(1);
+}
+
+if (parsed.data.NODE_ENV === 'production') {
+  const missingProdSecrets = [
+    ['AUTH_ACCESS_TOKEN_SECRET', parsed.data.AUTH_ACCESS_TOKEN_SECRET],
+    ['AUTH_REFRESH_TOKEN_SECRET', parsed.data.AUTH_REFRESH_TOKEN_SECRET],
+    ['RESEND_API_KEY', parsed.data.RESEND_API_KEY],
+  ].filter(([, value]) => !value);
+
+  if (missingProdSecrets.length > 0) {
+    // eslint-disable-next-line no-console
+    console.error(
+      'Invalid production API environment: missing required secrets',
+      missingProdSecrets.map(([key]) => key),
+    );
+    process.exit(1);
+  }
 }
 
 export const env = parsed.data;

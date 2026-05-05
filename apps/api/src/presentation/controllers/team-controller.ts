@@ -1,8 +1,11 @@
 import { type RequestHandler } from 'express';
 import { ERROR_CODES, INVITE_LIMITS, TEAM_LIMITS } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
+import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
+import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/index.js';
+import { env } from '../../shared/config/env.js';
 
 const getUserProfile = async (userId: string) => {
   const supabase = getSupabaseService() as any;
@@ -16,6 +19,18 @@ const getUserProfile = async (userId: string) => {
   if (error) throw error;
   if (!data) throw AppError.notFound('User profile not found');
   return data;
+};
+
+const getTeamMembers = async (teamId: string) => {
+  const supabase = getSupabaseService() as any;
+  const { data, error } = await supabase
+    .from('users')
+    .select('id,name,email')
+    .eq('team_id', teamId)
+    .is('deleted_at', null);
+
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; name: string; email: string }>;
 };
 
 export const createTeam: RequestHandler = async (req, res, next) => {
@@ -284,6 +299,20 @@ export const sendInvite: RequestHandler = async (req, res, next) => {
       },
     ] as never[]);
 
+    fireAndForget(
+      getEmailService().sendTeamInvite(
+        { to: invitee.email, name: invitee.name },
+        {
+          recipientName: invitee.name,
+          teamName: team.name,
+          inviterName: sender.name,
+          expiresAt,
+          invitesUrl: `${env.APP_URL}/dashboard/team`,
+        },
+      ),
+      'team invite email',
+    );
+
     res.status(201).json({
       status: 'success',
       data: { invite: created },
@@ -471,6 +500,7 @@ export const dissolveTeam: RequestHandler = async (req, res, next) => {
     if (edition.team_management_locked) throw new AppError(ERROR_CODES.TEAM_LOCKED, 'Team management is locked');
 
     const now = new Date().toISOString();
+    const members = await getTeamMembers(team.id);
 
     const [{ error: membersResetError }, { error: deleteError }] = await Promise.all([
       supabase
@@ -485,6 +515,21 @@ export const dissolveTeam: RequestHandler = async (req, res, next) => {
 
     if (membersResetError) throw membersResetError;
     if (deleteError) throw deleteError;
+    fireAndForget(
+      Promise.allSettled(
+        members.map((member) =>
+          getEmailService().sendTeamDissolved(
+            { to: member.email, name: member.name },
+            {
+              recipientName: member.name,
+              teamName: team.name,
+              dashboardUrl: `${env.APP_URL}/dashboard`,
+            },
+          ),
+        ),
+      ),
+      'team dissolved emails',
+    );
 
     res.status(200).json({
       status: 'success',

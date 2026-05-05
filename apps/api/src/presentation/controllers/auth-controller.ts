@@ -6,9 +6,24 @@ import { verifyToken } from '../../infrastructure/auth/jwt.js';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/index.js';
+import { env } from '../../shared/config/env.js';
 
 const authService = new AuthService();
 const verificationWorkflowService = getVerificationWorkflowService();
+
+const buildAuthCookieOptions = (maxAge: number) => ({
+  httpOnly: true,
+  secure: env.NODE_ENV === 'production',
+  sameSite: 'strict' as const,
+  maxAge,
+  path: '/',
+  ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+});
+
+const clearAuthCookieOptions = {
+  path: '/',
+  ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+};
 
 /**
  * POST /auth/register
@@ -56,19 +71,9 @@ export const register: RequestHandler = async (req, res, next) => {
     }
 
     // Set HTTP-only, Secure, SameSite=Strict cookies
-    res.cookie('access-token', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: SESSION.ACCESS_TOKEN_TTL_MS,
-    });
+    res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
-    res.cookie('refresh-token', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: SESSION.REFRESH_TOKEN_TTL_MS,
-    });
+    res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
 
     logger.info({ userId: user.id, email: user.email }, 'User registered');
 
@@ -100,19 +105,9 @@ export const login: RequestHandler = async (req, res, next) => {
     const { user, tokens } = await authService.login(email, password);
 
     // Set HTTP-only, Secure, SameSite=Strict cookies
-    res.cookie('access-token', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: SESSION.ACCESS_TOKEN_TTL_MS,
-    });
+    res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
-    res.cookie('refresh-token', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: SESSION.REFRESH_TOKEN_TTL_MS,
-    });
+    res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
 
     logger.info({ userId: user.id, email: user.email }, 'User logged in');
 
@@ -162,12 +157,7 @@ export const refresh: RequestHandler = async (req, res, next) => {
     });
 
     // Set new access token cookie
-    res.cookie('access-token', newAccessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: SESSION.ACCESS_TOKEN_TTL_MS,
-    });
+    res.cookie('access-token', newAccessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
     logger.debug({ userId: payload.sub }, 'Access token refreshed');
 
@@ -188,8 +178,8 @@ export const refresh: RequestHandler = async (req, res, next) => {
  * No body required.
  */
 export const logout: RequestHandler = async (req, res) => {
-  res.clearCookie('access-token');
-  res.clearCookie('refresh-token');
+  res.clearCookie('access-token', clearAuthCookieOptions);
+  res.clearCookie('refresh-token', clearAuthCookieOptions);
 
   if (req.user) {
     logger.info({ userId: req.user.id }, 'User logged out');
