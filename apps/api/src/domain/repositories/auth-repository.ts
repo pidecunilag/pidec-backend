@@ -33,7 +33,12 @@ export class AuthRepository {
    */
   async findById(id: string): Promise<DbUser | null> {
     const supabase = getSupabaseService();
-    const { data, error } = await supabase.from('users').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle();
 
     if (error) throw error;
     return data ?? null;

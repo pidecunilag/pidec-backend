@@ -53,12 +53,20 @@ export const listJudgeSubmissions: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
 
-    const stage = Number((req.query as { stage?: string }).stage ?? 1);
+    const requestedStage = Number((req.query as { stage?: string }).stage ?? 1);
+    const stage = requestedStage;
     if (![1, 2, 3].includes(stage)) throw AppError.validation('Invalid stage');
 
     const supabase = getSupabaseService() as any;
     const edition = await getActiveEdition();
     const judge = await getJudgeProfile(req.user.id);
+    const allowedStage = judge.stage_scope === 'stage_1' ? 1 : 2;
+    if (stage !== allowedStage) {
+      throw AppError.forbidden('Requested stage is outside judge scope');
+    }
+    if (edition.active_stage < allowedStage) {
+      throw AppError.forbidden('Judge submissions are not available for this stage yet');
+    }
 
     const { data, error } = await supabase
       .from('submissions')

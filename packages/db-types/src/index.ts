@@ -262,6 +262,17 @@ export interface DbNotification {
   deleted_at: string | null;
 }
 
+export interface DbRefreshSession {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DbAdminLog {
   id: string;
   admin_id: string;
@@ -421,6 +432,15 @@ export interface Database {
           message: string;
         };
         Update: Partial<DbNotification>;
+      };
+      refresh_sessions: {
+        Row: DbRefreshSession;
+        Insert: Partial<DbRefreshSession> & {
+          user_id: string;
+          token_hash: string;
+          expires_at: string;
+        };
+        Update: Partial<DbRefreshSession>;
       };
       admin_logs: {
         Row: DbAdminLog;

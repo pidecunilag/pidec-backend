@@ -16,7 +16,9 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-      - key: JWT_SECRET
+      - key: AUTH_ACCESS_TOKEN_SECRET
+        sync: false
+      - key: AUTH_REFRESH_TOKEN_SECRET
         sync: false
       - key: RESEND_API_KEY
         sync: false
@@ -24,7 +26,7 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: WEB_URL
+      - key: APP_URL
         sync: false
       - key: CORS_ORIGIN
         sync: false

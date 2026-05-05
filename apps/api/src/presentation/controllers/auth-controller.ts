@@ -1,8 +1,11 @@
 import { type RequestHandler } from 'express';
 import { ERROR_CODES, SESSION } from '@pidec/shared';
 import { AuthService } from '../../domain/services/auth-service.js';
+import { AuthRepository } from '../../domain/repositories/auth-repository.js';
+import { TokenRepository } from '../../domain/repositories/verification-token-repository.js';
 import { getVerificationWorkflowService } from '../../domain/services/verification-workflow-service.js';
 import { verifyToken } from '../../infrastructure/auth/jwt.js';
+import { hashToken } from '../../infrastructure/auth/token-utils.js';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/index.js';
@@ -10,6 +13,8 @@ import { env } from '../../shared/config/env.js';
 
 const authService = new AuthService();
 const verificationWorkflowService = getVerificationWorkflowService();
+const authRepository = new AuthRepository();
+const tokenRepository = new TokenRepository();
 
 const buildAuthCookieOptions = (maxAge: number) => ({
   httpOnly: true,
@@ -148,18 +153,55 @@ export const refresh: RequestHandler = async (req, res, next) => {
       throw AppError.unauthenticated('Invalid token type');
     }
 
+    if (!payload.sid) {
+      throw AppError.unauthenticated('Refresh session is missing');
+    }
+
+    const [session, currentUser] = await Promise.all([
+      tokenRepository.findRefreshSession(payload.sid),
+      authRepository.findById(payload.sub),
+    ]);
+
+    if (!session || session.revoked_at || session.token_hash !== hashToken(refreshToken)) {
+      throw AppError.unauthenticated('Refresh session is no longer valid');
+    }
+    if (new Date(session.expires_at).getTime() <= Date.now()) {
+      await tokenRepository.revokeRefreshSession(session.id);
+      throw AppError.unauthenticated('Refresh session has expired');
+    }
+    if (!currentUser || currentUser.is_suspended) {
+      await tokenRepository.revokeAllRefreshSessionsForUser(payload.sub);
+      throw AppError.unauthenticated('Account is no longer allowed to refresh sessions');
+    }
+
     // Generate new access token (same payload structure)
-    const { generateAccessToken } = await import('../../infrastructure/auth/jwt.js');
+    const { generateAccessToken, generateRefreshToken } = await import('../../infrastructure/auth/jwt.js');
     const newAccessToken = generateAccessToken({
-      sub: payload.sub,
-      email: payload.email,
-      role: payload.role,
+      sub: currentUser.id,
+      email: currentUser.email,
+      role: currentUser.role,
     });
+    const newRefreshToken = generateRefreshToken({
+      sub: currentUser.id,
+      email: currentUser.email,
+      role: currentUser.role,
+      sid: session.id,
+    });
+    const refreshedSession = await tokenRepository.rotateRefreshSession(
+      session.id,
+      hashToken(refreshToken),
+      hashToken(newRefreshToken),
+      new Date(Date.now() + SESSION.REFRESH_TOKEN_TTL_MS),
+    );
+    if (!refreshedSession) {
+      throw AppError.unauthenticated('Refresh token has already been rotated');
+    }
 
     // Set new access token cookie
     res.cookie('access-token', newAccessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
+    res.cookie('refresh-token', newRefreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
 
-    logger.debug({ userId: payload.sub }, 'Access token refreshed');
+    logger.debug({ userId: currentUser.id }, 'Access token refreshed');
 
     res.status(200).json({
       status: 'success',
@@ -178,6 +220,19 @@ export const refresh: RequestHandler = async (req, res, next) => {
  * No body required.
  */
 export const logout: RequestHandler = async (req, res) => {
+  const refreshToken =
+    (req as unknown as { cookies?: Record<string, string> }).cookies?.['refresh-token'] ?? null;
+  if (refreshToken) {
+    try {
+      const payload = verifyToken(refreshToken);
+      if (payload.type === 'refresh' && payload.sid) {
+        await tokenRepository.revokeRefreshSession(payload.sid, hashToken(refreshToken));
+      }
+    } catch {
+      // no-op
+    }
+  }
+
   res.clearCookie('access-token', clearAuthCookieOptions);
   res.clearCookie('refresh-token', clearAuthCookieOptions);
 

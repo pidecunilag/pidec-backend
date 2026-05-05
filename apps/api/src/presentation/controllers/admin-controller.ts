@@ -1,8 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { type RequestHandler } from 'express';
+import { ERROR_CODES } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
+import { hashPassword } from '../../infrastructure/auth/password.js';
+import { TokenRepository } from '../../domain/repositories/verification-token-repository.js';
+import { AuthService } from '../../domain/services/auth-service.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { env } from '../../shared/config/env.js';
 
@@ -26,6 +30,17 @@ const getActiveEdition = async () => {
   if (error) throw error;
   if (!data) throw AppError.notFound('No active edition configured');
   return data;
+};
+
+const tokenRepository = new TokenRepository();
+const authService = new AuthService();
+
+const generateSystemMatricNumber = (): string => {
+  let digits = '';
+  while (digits.length < 9) {
+    digits += String(randomBytes(1).readUInt8(0) % 10);
+  }
+  return digits.slice(0, 9);
 };
 
 const getTeamMembers = async (teamId: string) => {
@@ -1107,6 +1122,7 @@ export const suspendUser: RequestHandler = async (req, res, next) => {
       .single();
 
     if (error) throw error;
+    await tokenRepository.revokeAllRefreshSessionsForUser(userId);
 
     res.status(200).json({ status: 'success', data: { user: data } });
   } catch (err) {
@@ -1337,13 +1353,54 @@ export const createJudge: RequestHandler = async (req, res, next) => {
       .maybeSingle();
 
     if (userError) throw userError;
-    if (!user) throw AppError.validation('Judge user account must exist before assignment');
+    if (user) throw new AppError(ERROR_CODES.DUPLICATE_ENTRY, 'A user account already exists for this email');
+
+    const generatedPassword = randomBytes(24).toString('hex');
+    const passwordHash = await hashPassword(generatedPassword);
+
+    let createdUser: { id: string; email: string; name: string } | null = null;
+    let lastInsertError: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const { data: insertedUser, error: insertUserError } = await supabase
+        .from('users')
+        .insert([
+          {
+            name,
+            email,
+            matric_number: generateSystemMatricNumber(),
+            department: 'JUDGE',
+            level: 500,
+            verification_status: 'verified',
+            verification_method: 'manual',
+            verification_timestamp: new Date().toISOString(),
+            password_hash: passwordHash,
+            role: 'judge',
+          },
+        ] as never[])
+        .select('id,email,name')
+        .single();
+
+      if (!insertUserError && insertedUser) {
+        createdUser = insertedUser;
+        break;
+      }
+
+      lastInsertError = insertUserError;
+      const message = String((insertUserError as { message?: string } | null)?.message ?? '');
+      if (!message.includes('idx_users_matric_unique')) {
+        throw insertUserError;
+      }
+    }
+
+    if (!createdUser) {
+      throw lastInsertError instanceof Error ? lastInsertError : AppError.internal('Could not create judge account');
+    }
 
     const { data, error } = await supabase
       .from('judges')
       .insert([
         {
-          id: user.id,
+          id: createdUser.id,
           edition_id: edition.id,
           name,
           email,
@@ -1357,11 +1414,7 @@ export const createJudge: RequestHandler = async (req, res, next) => {
       .single();
 
     if (error) throw error;
-
-    await supabase
-      .from('users')
-      .update({ role: 'judge' } as never)
-      .eq('id', user.id);
+    fireAndForget(authService.requestPasswordReset(createdUser.email), 'judge onboarding password reset email');
 
     res.status(201).json({ status: 'success', data: { judge: data } });
   } catch (err) {

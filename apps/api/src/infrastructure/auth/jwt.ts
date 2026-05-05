@@ -13,6 +13,7 @@ export interface JwtPayload {
   email: string;
   role: 'student' | 'admin' | 'judge';
   type: 'access' | 'refresh';
+  sid?: string;
   iat?: number;
   exp?: number;
 }

@@ -116,3 +116,59 @@ export const loginRateLimiter = rateLimit({
   } : {}),
   handler: createRateLimitResponse('Too many login attempts, please try again in 15 minutes.'),
 });
+
+export const refreshRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_LOGIN_WINDOW_MS,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  ...(redisClient ? {
+    store: new RedisStore({
+      sendCommand: redisSendCommand,
+      prefix: 'rl:refresh:',
+    })
+  } : {}),
+  handler: createRateLimitResponse('Too many refresh attempts, please try again later.'),
+});
+
+export const forgotPasswordRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_REGISTRATION_WINDOW_MS,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  ...(redisClient ? {
+    store: new RedisStore({
+      sendCommand: redisSendCommand,
+      prefix: 'rl:forgot-password:',
+    })
+  } : {}),
+  handler: createRateLimitResponse('Too many password reset requests, please try again later.'),
+});
+
+export const passwordResetRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_LOGIN_WINDOW_MS,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  ...(redisClient ? {
+    store: new RedisStore({
+      sendCommand: redisSendCommand,
+      prefix: 'rl:password-reset:',
+    })
+  } : {}),
+  handler: createRateLimitResponse('Too many password reset attempts, please try again later.'),
+});
+
+export const verifyEmailRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_LOGIN_WINDOW_MS,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  ...(redisClient ? {
+    store: new RedisStore({
+      sendCommand: redisSendCommand,
+      prefix: 'rl:verify-email:',
+    })
+  } : {}),
+  handler: createRateLimitResponse('Too many email verification attempts, please try again later.'),
+});

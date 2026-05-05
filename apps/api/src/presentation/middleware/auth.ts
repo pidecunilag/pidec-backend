@@ -1,5 +1,6 @@
 import { type RequestHandler } from 'express';
 import { verifyToken } from '../../infrastructure/auth/jwt.js';
+import { AuthRepository } from '../../domain/repositories/auth-repository.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/index.js';
 
@@ -44,10 +45,16 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
       throw AppError.unauthenticated('Invalid token type');
     }
 
+    const authRepository = new AuthRepository();
+    const currentUser = await authRepository.findById(payload.sub);
+    if (!currentUser || currentUser.is_suspended) {
+      throw AppError.unauthenticated('Session is no longer valid');
+    }
+
     req.user = {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
+      id: currentUser.id,
+      email: currentUser.email,
+      role: currentUser.role,
     };
 
     next();

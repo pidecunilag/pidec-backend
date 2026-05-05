@@ -2,6 +2,7 @@ import { AuthRepository } from '../repositories/auth-repository.js';
 import { TokenRepository } from '../repositories/verification-token-repository.js';
 import { hashPassword, verifyPassword } from '../../infrastructure/auth/password.js';
 import { generateAccessToken, generateRefreshToken } from '../../infrastructure/auth/jwt.js';
+import { getLoginAttemptStore } from '../../infrastructure/auth/login-attempt-store.js';
 import {
   generateSecureToken,
   hashToken,
@@ -11,7 +12,7 @@ import {
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import type { DbUser } from '@pidec/db-types';
-import { ERROR_CODES } from '@pidec/shared';
+import { ERROR_CODES, SESSION } from '@pidec/shared';
 import { env } from '../../shared/config/env.js';
 
 export interface AuthTokens {
@@ -35,6 +36,7 @@ export interface AuthResult {
 export class AuthService {
   private authRepository = new AuthRepository();
   private tokenRepository = new TokenRepository();
+  private loginAttemptStore = getLoginAttemptStore();
 
   /**
    * Register a new user (student, judge, or admin).
@@ -82,7 +84,7 @@ export class AuthService {
     );
 
     // Generate tokens
-    const tokens = this.generateTokens(user);
+    const tokens = await this.generateTokens(user);
 
     return { user, tokens };
   }
@@ -93,10 +95,15 @@ export class AuthService {
    */
   async login(email: string, password: string): Promise<AuthResult> {
     email = email.toLowerCase().trim();
+    const loginStatus = await this.loginAttemptStore.getStatus(email);
+    if (loginStatus.lockedUntil && loginStatus.lockedUntil > Date.now()) {
+      throw AppError.rateLimited('Too many failed login attempts. Please try again later.');
+    }
 
     // Find user
     const user = await this.authRepository.findByEmail(email);
     if (!user) {
+      await this.loginAttemptStore.recordFailure(email);
       throw new AppError(ERROR_CODES.INVALID_CREDENTIALS, 'Invalid email or password');
     }
 
@@ -115,11 +122,14 @@ export class AuthService {
 
     const isPasswordValid = await verifyPassword(password, user.password_hash);
     if (!isPasswordValid) {
+      await this.loginAttemptStore.recordFailure(email);
       throw new AppError(ERROR_CODES.INVALID_CREDENTIALS, 'Invalid email or password');
     }
 
+    await this.loginAttemptStore.clear(email);
+
     // Generate tokens
-    const tokens = this.generateTokens(user);
+    const tokens = await this.generateTokens(user);
 
     return { user, tokens };
   }
@@ -278,6 +288,8 @@ export class AuthService {
 
     // Mark token as used
     await this.tokenRepository.markPasswordResetTokenUsed(resetToken.id);
+    await this.tokenRepository.revokeActivePasswordResetTokens(resetToken.user_id);
+    await this.tokenRepository.revokeAllRefreshSessionsForUser(resetToken.user_id);
 
     return user;
   }
@@ -285,16 +297,42 @@ export class AuthService {
   /**
    * Generate access and refresh token pair for a user.
    */
-  private generateTokens(user: DbUser): AuthTokens {
+  private async generateTokens(user: DbUser): Promise<AuthTokens> {
+    const refreshExpiresAt = new Date(Date.now() + SESSION.REFRESH_TOKEN_TTL_MS);
+    const provisionalRefreshToken = generateRefreshToken({
+      sub: user.id,
+      email: user.email,
+      role: user.role as 'student' | 'admin' | 'judge',
+      sid: 'pending',
+    });
+    const provisionalHash = hashToken(provisionalRefreshToken);
+    const session = await this.tokenRepository.createRefreshSession(
+      user.id,
+      provisionalHash,
+      refreshExpiresAt,
+    );
+
     const tokenPayload = {
       sub: user.id,
       email: user.email,
       role: user.role as 'student' | 'admin' | 'judge',
     };
 
+    const refreshToken = generateRefreshToken({
+      ...tokenPayload,
+      sid: session.id,
+    });
+
+    await this.tokenRepository.rotateRefreshSession(
+      session.id,
+      provisionalHash,
+      hashToken(refreshToken),
+      refreshExpiresAt,
+    );
+
     return {
       accessToken: generateAccessToken(tokenPayload),
-      refreshToken: generateRefreshToken(tokenPayload),
+      refreshToken,
     };
   }
 
