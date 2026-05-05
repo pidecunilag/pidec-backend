@@ -85,61 +85,88 @@ const listByTable = async <T>(
 };
 
 const upsertAsset = async (table: string, editionId: string, body: any) => {
-  const supabase = getSupabaseService() as any;
-  const { data, error } = await supabase
-    .from(table)
-    .insert([
-      {
-        edition_id: editionId,
-        name: body.name,
-        logo_url: body.logoUrl,
-        website_url: body.websiteUrl ?? null,
-        sort_order: body.sortOrder ?? 0,
-        is_active: body.isActive ?? true,
-      },
-    ] as never[])
-    .select('*')
-    .single();
+  try {
+    const supabase = getSupabaseService() as any;
+    const { data, error } = await supabase
+      .from(table)
+      .insert([
+        {
+          edition_id: editionId,
+          name: body.name,
+          logo_url: body.logoUrl,
+          website_url: body.websiteUrl ?? null,
+          sort_order: body.sortOrder ?? 0,
+          is_active: body.isActive ?? true,
+        },
+      ] as never[])
+      .select('*')
+      .single();
 
-  if (error) throw error;
-  return mapAsset(data);
+    if (error) throw error;
+    return mapAsset(data);
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      throw AppError.notFound(
+        'Landing content tables are unavailable until migration 0021_landing_content.sql is applied',
+      );
+    }
+    throw error;
+  }
 };
 
 const updateAsset = async (table: string, editionId: string, id: string, body: any) => {
-  const supabase = getSupabaseService() as any;
-  const patch: Record<string, unknown> = {};
-  if (body.name !== undefined) patch.name = body.name;
-  if (body.logoUrl !== undefined) patch.logo_url = body.logoUrl;
-  if (body.websiteUrl !== undefined) patch.website_url = body.websiteUrl;
-  if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
-  if (body.isActive !== undefined) patch.is_active = body.isActive;
+  try {
+    const supabase = getSupabaseService() as any;
+    const patch: Record<string, unknown> = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.logoUrl !== undefined) patch.logo_url = body.logoUrl;
+    if (body.websiteUrl !== undefined) patch.website_url = body.websiteUrl;
+    if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
+    if (body.isActive !== undefined) patch.is_active = body.isActive;
 
-  const { data, error } = await supabase
-    .from(table)
-    .update(patch as never)
-    .eq('id', id)
-    .eq('edition_id', editionId)
-    .is('deleted_at', null)
-    .select('*')
-    .single();
+    const { data, error } = await supabase
+      .from(table)
+      .update(patch as never)
+      .eq('id', id)
+      .eq('edition_id', editionId)
+      .is('deleted_at', null)
+      .select('*')
+      .single();
 
-  if (error) throw error;
-  return mapAsset(data);
+    if (error) throw error;
+    return mapAsset(data);
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      throw AppError.notFound(
+        'Landing content tables are unavailable until migration 0021_landing_content.sql is applied',
+      );
+    }
+    throw error;
+  }
 };
 
 const softDelete = async (table: string, editionId: string, id: string) => {
-  const supabase = getSupabaseService() as any;
-  const { data, error } = await supabase
-    .from(table)
-    .update({ deleted_at: new Date().toISOString() } as never)
-    .eq('id', id)
-    .eq('edition_id', editionId)
-    .is('deleted_at', null)
-    .select('*')
-    .single();
+  try {
+    const supabase = getSupabaseService() as any;
+    const { data, error } = await supabase
+      .from(table)
+      .update({ deleted_at: new Date().toISOString() } as never)
+      .eq('id', id)
+      .eq('edition_id', editionId)
+      .is('deleted_at', null)
+      .select('*')
+      .single();
 
-  if (error) throw error;
-  return mapAsset(data);
+    if (error) throw error;
+    return mapAsset(data);
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      throw AppError.notFound(
+        'Landing content tables are unavailable until migration 0021_landing_content.sql is applied',
+      );
+    }
+    throw error;
+  }
 };
 
 const publicLandingData = async (): Promise<LandingData> => {
@@ -675,7 +702,14 @@ export const createFaq: RequestHandler = async (req, res, next) => {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Landing content tables are unavailable until migration 0021_landing_content.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(201).json({ status: 'success', data: { faq: mapFaq(data) } });
   } catch (err) {
@@ -703,7 +737,14 @@ export const updateFaq: RequestHandler = async (req, res, next) => {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Landing content tables are unavailable until migration 0021_landing_content.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(200).json({ status: 'success', data: { faq: mapFaq(data) } });
   } catch (err) {
@@ -725,7 +766,14 @@ export const deleteFaq: RequestHandler = async (req, res, next) => {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Landing content tables are unavailable until migration 0021_landing_content.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(200).json({ status: 'success', data: { faq: mapFaq(data) } });
   } catch (err) {

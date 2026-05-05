@@ -33,6 +33,105 @@ const getTeamMembers = async (teamId: string) => {
   return (data ?? []) as Array<{ id: string; name: string; email: string }>;
 };
 
+const respondInviteWithFallback = async (
+  inviteId: string,
+  inviteeId: string,
+  status: 'accepted' | 'declined',
+) => {
+  const supabase = getSupabaseService() as any;
+  const { data: invite, error: inviteError } = await supabase
+    .from('team_invites')
+    .select('*')
+    .eq('id', inviteId)
+    .eq('invitee_id', inviteeId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (inviteError) throw inviteError;
+  if (!invite) throw AppError.notFound('Invite not found');
+  if (invite.status !== 'pending') throw AppError.validation('Invite is no longer pending');
+
+  const now = new Date().toISOString();
+  if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+    await supabase
+      .from('team_invites')
+      .update({ status: 'expired', responded_at: now, updated_at: now } as never)
+      .eq('id', invite.id);
+    throw new AppError(ERROR_CODES.INVITE_EXPIRED, 'Invite has expired');
+  }
+
+  if (status === 'accepted') {
+    const [{ data: invitee, error: inviteeError }, { data: team, error: teamError }, { count: teamMemberCount, error: teamMemberCountError }] =
+      await Promise.all([
+        supabase
+          .from('users')
+          .select('*')
+          .eq('id', inviteeId)
+          .is('deleted_at', null)
+          .maybeSingle(),
+        supabase
+          .from('teams')
+          .select('*')
+          .eq('id', invite.team_id)
+          .is('deleted_at', null)
+          .maybeSingle(),
+        supabase
+          .from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', invite.team_id)
+          .is('deleted_at', null),
+      ]);
+
+    if (inviteeError) throw inviteeError;
+    if (teamError) throw teamError;
+    if (teamMemberCountError) throw teamMemberCountError;
+    if (!invitee) throw AppError.notFound('Invitee not found');
+    if (!team) throw AppError.notFound('Team not found');
+    if (invitee.team_id) throw new AppError(ERROR_CODES.ALREADY_IN_TEAM, 'You already belong to a team');
+    if ((teamMemberCount ?? 0) >= TEAM_LIMITS.MAX_MEMBERS) {
+      throw new AppError(ERROR_CODES.TEAM_FULL, 'Team already has the maximum number of members');
+    }
+
+    const { data: membershipUpdate, error: membershipError } = await supabase
+      .from('users')
+      .update({ team_id: team.id, updated_at: now } as never)
+      .eq('id', inviteeId)
+      .is('team_id', null)
+      .select('id,team_id')
+      .maybeSingle();
+
+    if (membershipError) throw membershipError;
+    if (!membershipUpdate) {
+      throw new AppError(ERROR_CODES.ALREADY_IN_TEAM, 'You already belong to a team');
+    }
+  }
+
+  const { data: updatedInvite, error: updatedInviteError } = await supabase
+    .from('team_invites')
+    .update({ status, responded_at: now, updated_at: now } as never)
+    .eq('id', invite.id)
+    .eq('status', 'pending')
+    .select('id,status,team_id')
+    .maybeSingle();
+
+  if (updatedInviteError) throw updatedInviteError;
+  if (!updatedInvite) {
+    if (status === 'accepted') {
+      await supabase
+        .from('users')
+        .update({ team_id: null, updated_at: now } as never)
+        .eq('id', inviteeId)
+        .eq('team_id', invite.team_id);
+    }
+    throw AppError.validation('Invite is no longer pending');
+  }
+
+  return {
+    invite_id: updatedInvite.id,
+    invite_status: updatedInvite.status,
+  };
+};
+
 export const createTeam: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
@@ -232,14 +331,14 @@ export const sendInvite: RequestHandler = async (req, res, next) => {
     if (!edition) throw AppError.notFound('No active edition configured');
     if (edition.team_management_locked) throw new AppError(ERROR_CODES.TEAM_LOCKED, 'Team management is locked');
 
-    const { data: currentMembers, error: currentMembersError } = await supabase
+    const { count: currentMemberCount, error: currentMembersError } = await supabase
       .from('users')
       .select('id', { count: 'exact', head: true })
       .eq('team_id', team.id)
       .is('deleted_at', null);
 
     if (currentMembersError) throw currentMembersError;
-    if ((currentMembers.count ?? 0) >= TEAM_LIMITS.MAX_MEMBERS) {
+    if ((currentMemberCount ?? 0) >= TEAM_LIMITS.MAX_MEMBERS) {
       throw new AppError(ERROR_CODES.TEAM_FULL, 'Team already has the maximum number of members');
     }
 
@@ -328,13 +427,16 @@ export const respondInvite: RequestHandler = async (req, res, next) => {
 
     const { inviteId, status } = req.body as { inviteId: string; status: 'accepted' | 'declined' };
     const supabase = getSupabaseService() as any;
+    let result: { invite_id: string; invite_status: string } | null = null;
     const { data, error } = await supabase.rpc('respond_team_invite', {
       p_invite_id: inviteId,
       p_invitee_id: req.user.id,
       p_status: status,
     });
 
-    if (error) {
+    if (!error) {
+      result = Array.isArray(data) ? data[0] : data;
+    } else {
       const message = error.message.toLowerCase();
       if (message.includes('expired')) {
         throw new AppError(ERROR_CODES.INVITE_EXPIRED, 'Invite has expired');
@@ -351,10 +453,13 @@ export const respondInvite: RequestHandler = async (req, res, next) => {
       if (message.includes('no longer pending')) {
         throw AppError.validation('Invite is no longer pending');
       }
-      throw error;
+      if (error.code === '42702' || message.includes('ambiguous')) {
+        result = await respondInviteWithFallback(inviteId, req.user.id, status);
+      } else {
+        throw error;
+      }
     }
 
-    const result = Array.isArray(data) ? data[0] : data;
     if (!result) {
       throw AppError.internal('Invite response did not return a result');
     }

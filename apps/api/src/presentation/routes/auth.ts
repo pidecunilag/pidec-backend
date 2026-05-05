@@ -45,13 +45,11 @@ authRouter.post('/logout', requireAuth, logout);
 authRouter.get('/me', requireAuth, me);
 authRouter.post(
   '/verification-document',
-  requireAuth,
   parseVerificationDocumentUpload,
   uploadVerificationDocument,
 );
 authRouter.post(
   '/reupload-doc',
-  requireAuth,
   parseVerificationDocumentUpload,
   uploadVerificationDocument,
 );

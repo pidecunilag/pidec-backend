@@ -43,6 +43,17 @@ const generateSystemMatricNumber = (): string => {
   return digits.slice(0, 9);
 };
 
+const isMissingTableError = (error: unknown): boolean => {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : JSON.stringify(error);
+
+  return /could not find the table|schema cache/i.test(message.toLowerCase());
+};
+
 const getTeamMembers = async (teamId: string) => {
   const supabase = getSupabaseService() as any;
   const { data, error } = await supabase
@@ -147,7 +158,14 @@ export const listUsers: RequestHandler = async (req, res, next) => {
 
     const { data, count, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     if (cursor) {
       const page = getCursorPage(data ?? [], limitNumber, 'created_at');
@@ -290,7 +308,14 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
 
     const { data, count, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     if (cursor) {
       const page = getCursorPage(data ?? [], limitNumber, 'submitted_at');
@@ -345,7 +370,14 @@ export const listJudges: RequestHandler = async (req, res, next) => {
 
     const { data, count, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     if (cursor) {
       const page = getCursorPage(data ?? [], limitNumber, 'created_at');
@@ -399,7 +431,14 @@ export const listTokens: RequestHandler = async (req, res, next) => {
 
     const { data, count, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     if (cursor) {
       const page = getCursorPage(data ?? [], limitNumber, 'created_at');
@@ -457,7 +496,14 @@ export const listVerificationQueue: RequestHandler = async (req, res, next) => {
 
     const { data, count, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     if (cursor) {
       const page = getCursorPage(data ?? [], limitNumber, 'created_at');
@@ -500,7 +546,14 @@ export const exportStudents: RequestHandler = async (_req, res, next) => {
       .is('deleted_at', null)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     const rows = (data ?? []).map((user: any) => ({
       id: user.id,
@@ -646,7 +699,13 @@ export const exportSubmissions: RequestHandler = async (req, res, next) => {
     if (typeof stage === 'number') query = query.eq('stage', stage);
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        res.status(200).json({ status: 'success', data: { checkpoints: [] } });
+        return;
+      }
+      throw error;
+    }
 
     const rows = (data ?? []).map((submission: any) => ({
       id: submission.id,
@@ -777,7 +836,13 @@ export const listStage2Checkpoints: RequestHandler = async (req, res, next) => {
     if (!includeDeleted) query = query.is('deleted_at', null);
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        res.status(200).json({ status: 'success', data: { checkpoints: [] } });
+        return;
+      }
+      throw error;
+    }
 
     res.status(200).json({ status: 'success', data: { checkpoints: data ?? [] } });
   } catch (err) {
@@ -807,7 +872,14 @@ export const createStage2Checkpoint: RequestHandler = async (req, res, next) => 
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(201).json({ status: 'success', data: { checkpoint: data } });
   } catch (err) {
@@ -838,7 +910,14 @@ export const updateStage2Checkpoint: RequestHandler = async (req, res, next) => 
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(200).json({ status: 'success', data: { checkpoint: data } });
   } catch (err) {
@@ -861,7 +940,14 @@ export const deleteStage2Checkpoint: RequestHandler = async (req, res, next) => 
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(200).json({ status: 'success', data: { checkpoint: data } });
   } catch (err) {
@@ -1057,7 +1143,14 @@ export const verificationDecision: RequestHandler = async (req, res, next) => {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     if (decision === 'approve') {
       fireAndForget(
@@ -1121,7 +1214,14 @@ export const suspendUser: RequestHandler = async (req, res, next) => {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
     await tokenRepository.revokeAllRefreshSessionsForUser(userId);
 
     res.status(200).json({ status: 'success', data: { user: data } });
@@ -1413,7 +1513,14 @@ export const createJudge: RequestHandler = async (req, res, next) => {
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
     fireAndForget(authService.requestPasswordReset(createdUser.email), 'judge onboarding password reset email');
 
     res.status(201).json({ status: 'success', data: { judge: data } });
@@ -1464,27 +1571,47 @@ export const enterFeedback: RequestHandler = async (req, res, next) => {
 
     const supabase = getSupabaseService() as any;
 
-    const { data, error } = await supabase
+    const feedbackPayload = {
+      submission_id: submissionId,
+      scores,
+      comments,
+      total_score: totalScore,
+      outcome,
+      entered_by_admin: req.user.id,
+      evaluator_name: evaluatorName,
+      evaluation_date: evaluationDate ?? null,
+    };
+
+    const { data: existingFeedback, error: existingFeedbackError } = await supabase
       .from('feedback')
-      .upsert(
-        [
-          {
-            submission_id: submissionId,
-            scores,
-            comments,
-            total_score: totalScore,
-            outcome,
-            entered_by_admin: req.user.id,
-            evaluator_name: evaluatorName,
-            evaluation_date: evaluationDate ?? null,
-          },
-        ] as never[],
-        { onConflict: 'submission_id' },
-      )
+      .select('id')
+      .eq('submission_id', submissionId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (existingFeedbackError) throw existingFeedbackError;
+
+    const feedbackMutation = existingFeedback
+      ? supabase
+          .from('feedback')
+          .update(feedbackPayload as never)
+          .eq('id', existingFeedback.id)
+      : supabase
+          .from('feedback')
+          .insert([feedbackPayload] as never[]);
+
+    const { data, error } = await feedbackMutation
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw AppError.notFound(
+          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
+        );
+      }
+      throw error;
+    }
 
     res.status(200).json({ status: 'success', data: { feedback: data } });
   } catch (err) {

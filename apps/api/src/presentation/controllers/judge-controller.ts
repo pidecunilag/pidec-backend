@@ -30,6 +30,54 @@ const getJudgeProfile = async (judgeId: string) => {
   return data;
 };
 
+const upsertJudgeScore = async (
+  submissionId: string,
+  judgeId: string,
+  payload: {
+    scores: Record<string, number>;
+    comments: Record<string, string> | { note?: string };
+    total_score: number | null;
+    is_representative_pick: boolean;
+  },
+) => {
+  const supabase = getSupabaseService() as any;
+  const { data: existingScore, error: existingScoreError } = await supabase
+    .from('judge_scores')
+    .select('id')
+    .eq('submission_id', submissionId)
+    .eq('judge_id', judgeId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (existingScoreError) throw existingScoreError;
+
+  const scorePayload = {
+    submission_id: submissionId,
+    judge_id: judgeId,
+    scores: payload.scores,
+    comments: payload.comments,
+    total_score: payload.total_score,
+    is_representative_pick: payload.is_representative_pick,
+    submitted_at: new Date().toISOString(),
+  };
+
+  const mutation = existingScore
+    ? supabase
+        .from('judge_scores')
+        .update(scorePayload as never)
+        .eq('id', existingScore.id)
+    : supabase
+        .from('judge_scores')
+        .insert([scorePayload] as never[]);
+
+  const { data, error } = await mutation
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
 export const getJudgeInfo: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
@@ -118,25 +166,12 @@ export const pickStage1Representative: RequestHandler = async (req, res, next) =
       throw AppError.forbidden('Submission is outside judge department scope');
     }
 
-    const { data: score, error } = await supabase
-      .from('judge_scores')
-      .upsert(
-        [
-          {
-            submission_id: submissionId,
-            judge_id: req.user.id,
-            scores: {},
-            comments: comments ? { note: comments } : {},
-            is_representative_pick: true,
-            submitted_at: new Date().toISOString(),
-          },
-        ] as never[],
-        { onConflict: 'judge_id,submission_id' },
-      )
-      .select('*')
-      .single();
-
-    if (error) throw error;
+    const score = await upsertJudgeScore(submissionId, req.user.id, {
+      scores: {},
+      comments: comments ? { note: comments } : {},
+      total_score: null,
+      is_representative_pick: true,
+    });
 
     res.status(200).json({
       status: 'success',
@@ -221,26 +256,12 @@ export const submitStage2Score: RequestHandler = async (req, res, next) => {
           )
         : null;
 
-    const { data: score, error } = await supabase
-      .from('judge_scores')
-      .upsert(
-        [
-          {
-            submission_id: submissionId,
-            judge_id: req.user.id,
-            scores,
-            comments,
-            total_score: totalScore,
-            is_representative_pick: false,
-            submitted_at: new Date().toISOString(),
-          },
-        ] as never[],
-        { onConflict: 'judge_id,submission_id' },
-      )
-      .select('*')
-      .single();
-
-    if (error) throw error;
+    const score = await upsertJudgeScore(submissionId, req.user.id, {
+      scores,
+      comments,
+      total_score: totalScore,
+      is_representative_pick: false,
+    });
 
     res.status(200).json({
       status: 'success',

@@ -108,9 +108,9 @@ BEGIN
 
     SELECT count(*)
     INTO v_member_count
-    FROM public.users
-    WHERE team_id = v_team.id
-      AND deleted_at IS NULL;
+    FROM public.users AS team_members
+    WHERE team_members.team_id = v_team.id
+      AND team_members.deleted_at IS NULL;
 
     IF v_member_count >= 6 THEN
       RAISE EXCEPTION 'team is full';

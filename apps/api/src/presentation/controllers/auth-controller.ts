@@ -1,5 +1,5 @@
 import { type RequestHandler } from 'express';
-import { ERROR_CODES, SESSION } from '@pidec/shared';
+import { ERROR_CODES, SESSION, stripMatricSeparators } from '@pidec/shared';
 import { AuthService } from '../../domain/services/auth-service.js';
 import { AuthRepository } from '../../domain/repositories/auth-repository.js';
 import { TokenRepository } from '../../domain/repositories/verification-token-repository.js';
@@ -28,6 +28,43 @@ const buildAuthCookieOptions = (maxAge: number) => ({
 const clearAuthCookieOptions = {
   path: '/',
   ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+};
+
+const resolveVerificationUploadTarget = async (req: Parameters<RequestHandler>[0]) => {
+  if (req.user) {
+    return req.user.id;
+  }
+
+  const body = req.body as { email?: unknown; matricNumber?: unknown; matric_number?: unknown };
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const matricRaw =
+    typeof body.matricNumber === 'string'
+      ? body.matricNumber
+      : typeof body.matric_number === 'string'
+        ? body.matric_number
+        : '';
+  const matricNumber = stripMatricSeparators(matricRaw);
+
+  if (!email || !matricNumber) {
+    throw AppError.validation(
+      'Unauthenticated verification uploads require email and matricNumber fields',
+    );
+  }
+
+  const user = await authRepository.findByEmail(email);
+  if (!user || user.deleted_at) {
+    throw AppError.notFound('Student account not found for verification upload');
+  }
+
+  if (user.role !== 'student') {
+    throw AppError.forbidden('Only student accounts can submit verification documents');
+  }
+
+  if (stripMatricSeparators(user.matric_number ?? '') !== matricNumber) {
+    throw AppError.forbidden('Verification upload details do not match the student account');
+  }
+
+  return user.id;
 };
 
 /**
@@ -374,14 +411,14 @@ export const resetPassword: RequestHandler = async (req, res, next) => {
  */
 export const uploadVerificationDocument: RequestHandler = async (req, res, next) => {
   try {
-    if (!req.user) throw AppError.unauthenticated();
-
     const file = (req as unknown as { file?: Express.Multer.File }).file;
     if (!file) {
       throw AppError.validation('Verification document is required');
     }
 
-    const status = await verificationWorkflowService.submitDocument(req.user.id, {
+    const userId = await resolveVerificationUploadTarget(req);
+
+    const status = await verificationWorkflowService.submitDocument(userId, {
       buffer: file.buffer,
       mimetype: file.mimetype,
       size: file.size,
