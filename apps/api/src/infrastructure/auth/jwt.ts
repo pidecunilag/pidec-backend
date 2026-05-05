@@ -32,7 +32,6 @@ export const generateAccessToken = (payload: Omit<JwtPayload, 'type' | 'iat' | '
       expiresIn: ACCESS_TOKEN_EXPIRY,
       issuer: env.AUTH_TOKEN_ISSUER,
       audience: ACCESS_TOKEN_AUDIENCE,
-      subject: payload.sub,
     },
   );
 };
@@ -48,7 +47,6 @@ export const generateRefreshToken = (payload: Omit<JwtPayload, 'type' | 'iat' | 
       expiresIn: REFRESH_TOKEN_EXPIRY,
       issuer: env.AUTH_TOKEN_ISSUER,
       audience: REFRESH_TOKEN_AUDIENCE,
-      subject: payload.sub,
     },
   );
 };
