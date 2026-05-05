@@ -577,16 +577,18 @@ export const swaggerDocument = {
           200: successResponse('Login successful'),
           400: errorResponse('Validation failed'),
           401: errorResponse('Invalid credentials'),
+          429: errorResponse('Too many login attempts'),
         },
       },
     },
     '/auth/refresh': {
       post: {
         tags: ['Auth'],
-        summary: 'Refresh the access token using the refresh cookie',
+        summary: 'Rotate the refresh session and issue fresh auth cookies',
         responses: {
           200: successResponse('Session refreshed'),
           401: errorResponse('Refresh token is missing or invalid'),
+          429: errorResponse('Too many refresh attempts'),
         },
       },
     },
@@ -599,6 +601,7 @@ export const swaggerDocument = {
         responses: {
           200: successResponse('Email verified'),
           400: errorResponse('Invalid or expired token'),
+          429: errorResponse('Too many verification attempts'),
         },
       },
     },
@@ -610,6 +613,7 @@ export const swaggerDocument = {
         requestBody: jsonBody({ $ref: '#/components/schemas/ForgotPasswordRequest' }),
         responses: {
           200: successResponse('Password reset request accepted'),
+          429: errorResponse('Too many password reset requests'),
         },
       },
     },
@@ -622,6 +626,7 @@ export const swaggerDocument = {
         responses: {
           200: successResponse('Password reset successful'),
           400: errorResponse('Invalid or expired token'),
+          429: errorResponse('Too many password reset attempts'),
         },
       },
     },
@@ -1020,11 +1025,12 @@ export const swaggerDocument = {
     '/judge/submissions': {
       get: {
         tags: ['Judge'],
-        summary: 'List submissions visible to the judge',
+        summary: 'List submissions visible to the judge for the judge-scoped stage only',
         parameters: [{ $ref: '#/components/parameters/StageParam' }],
         responses: {
           200: successResponse('Judge submissions returned'),
           401: errorResponse('Authentication required'),
+          403: errorResponse('Requested stage is outside judge scope'),
         },
       },
     },
@@ -1472,10 +1478,11 @@ export const swaggerDocument = {
       },
       post: {
         tags: ['Admin'],
-        summary: 'Create a judge',
+        summary: 'Create a new platform-managed judge account and send onboarding email',
         requestBody: jsonBody({ $ref: '#/components/schemas/CreateJudgeRequest' }),
         responses: {
-          200: successResponse('Judge created'),
+          201: successResponse('Judge created'),
+          409: errorResponse('A user account already exists for this email'),
         },
       },
     },
