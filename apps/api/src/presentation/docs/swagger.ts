@@ -309,6 +309,18 @@ export const swaggerDocument = {
           document: {
             type: 'string',
             format: 'binary',
+            description: 'PDF or image verification document file upload.',
+          },
+          email: {
+            type: 'string',
+            format: 'email',
+            description:
+              'Required when the request is unauthenticated. Ignored when a valid auth cookie or bearer token is present.',
+          },
+          matricNumber: {
+            type: 'string',
+            description:
+              'Required when the request is unauthenticated. Must match the student account matric number.',
           },
         },
       },
@@ -558,12 +570,15 @@ export const swaggerDocument = {
       post: {
         tags: ['Auth'],
         summary: 'Register a new student account',
+        description:
+          'Creates the student account, sends the email verification message, and immediately establishes a browser session with HTTP-only auth cookies. Frontends must send subsequent requests with credentials included so the session cookies are stored and reused.',
         security: [],
         requestBody: jsonBody({ $ref: '#/components/schemas/RegisterRequest' }),
         responses: {
           201: successResponse('Registration completed'),
           400: errorResponse('Validation failed'),
           403: errorResponse('Registrations are closed'),
+          409: errorResponse('Email already registered'),
         },
       },
     },
@@ -654,11 +669,13 @@ export const swaggerDocument = {
       post: {
         tags: ['Auth'],
         summary: 'Upload a verification document',
+        description:
+          'Queues asynchronous AI verification. If the caller is already authenticated, only the document field is required. If the caller is not authenticated, the multipart body must also include email and matricNumber.',
         requestBody: multipartBody({ $ref: '#/components/schemas/VerificationUploadRequest' }),
         responses: {
           202: successResponse('Verification document queued'),
           400: errorResponse('Invalid file'),
-          401: errorResponse('Authentication required'),
+          401: errorResponse('Authentication required when identity fields are not provided'),
         },
       },
     },
@@ -666,11 +683,13 @@ export const swaggerDocument = {
       post: {
         tags: ['Auth'],
         summary: 'Re-upload a verification document',
+        description:
+          'Queues another asynchronous verification attempt subject to cooldown and max-attempt rules. If the caller is not authenticated, include email and matricNumber in the multipart body.',
         requestBody: multipartBody({ $ref: '#/components/schemas/VerificationUploadRequest' }),
         responses: {
           202: successResponse('Verification document queued'),
           400: errorResponse('Invalid file'),
-          401: errorResponse('Authentication required'),
+          401: errorResponse('Authentication required when identity fields are not provided'),
           429: errorResponse('Cooldown or upload limit reached'),
         },
       },
@@ -679,6 +698,8 @@ export const swaggerDocument = {
       get: {
         tags: ['Auth'],
         summary: 'Get current verification status',
+        description:
+          'Returns the verification workflow state for the authenticated session user. This is intended to be polled after registration and upload, so the client must keep the auth cookies established during registration or login.',
         responses: {
           200: successResponse('Verification status returned'),
           401: errorResponse('Authentication required'),

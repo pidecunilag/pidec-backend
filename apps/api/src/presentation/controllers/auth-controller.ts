@@ -16,10 +16,13 @@ const verificationWorkflowService = getVerificationWorkflowService();
 const authRepository = new AuthRepository();
 const tokenRepository = new TokenRepository();
 
+const authCookieSameSite = env.COOKIE_SAME_SITE;
+const authCookieSecure = env.NODE_ENV === 'production' || authCookieSameSite === 'none';
+
 const buildAuthCookieOptions = (maxAge: number) => ({
   httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'strict' as const,
+  secure: authCookieSecure,
+  sameSite: authCookieSameSite,
   maxAge,
   path: '/',
   ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
@@ -112,7 +115,8 @@ export const register: RequestHandler = async (req, res, next) => {
       // Don't fail registration if email sending fails
     }
 
-    // Set HTTP-only, Secure, SameSite=Strict cookies
+    // Create an authenticated session immediately so the client can continue
+    // onboarding flows like document upload and verification polling.
     res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
     res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
@@ -146,7 +150,7 @@ export const login: RequestHandler = async (req, res, next) => {
 
     const { user, tokens } = await authService.login(email, password);
 
-    // Set HTTP-only, Secure, SameSite=Strict cookies
+    // Refresh the browser session cookies on successful login.
     res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
     res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
