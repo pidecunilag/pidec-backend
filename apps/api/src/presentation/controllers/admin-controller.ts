@@ -1,22 +1,12 @@
-import { randomBytes } from 'node:crypto';
 import { type RequestHandler } from 'express';
-import { ERROR_CODES } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
-import { hashPassword } from '../../infrastructure/auth/password.js';
 import { TokenRepository } from '../../domain/repositories/verification-token-repository.js';
-import { AuthService } from '../../domain/services/auth-service.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { env } from '../../shared/config/env.js';
-
-const tokenAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-const generateTokenString = (): string => {
-  const bytes = randomBytes(12);
-  let token = '';
-  for (const b of bytes) token += tokenAlphabet[b % tokenAlphabet.length];
-  return token.slice(0, 12);
-};
+import { adminOrchestrationService } from '../../application/admin/admin-orchestration-service.js';
+import { adminExportService } from '../../application/admin/admin-export-service.js';
 
 const getActiveEdition = async () => {
   const supabase = getSupabaseService() as any;
@@ -33,15 +23,6 @@ const getActiveEdition = async () => {
 };
 
 const tokenRepository = new TokenRepository();
-const authService = new AuthService();
-
-const generateSystemMatricNumber = (): string => {
-  let digits = '';
-  while (digits.length < 9) {
-    digits += String(randomBytes(1).readUInt8(0) % 10);
-  }
-  return digits.slice(0, 9);
-};
 
 const isMissingTableError = (error: unknown): boolean => {
   const message =
@@ -52,53 +33,6 @@ const isMissingTableError = (error: unknown): boolean => {
         : JSON.stringify(error);
 
   return /could not find the table|schema cache/i.test(message.toLowerCase());
-};
-
-const getTeamMembers = async (teamId: string) => {
-  const supabase = getSupabaseService() as any;
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,name,email')
-    .eq('team_id', teamId)
-    .is('deleted_at', null);
-
-  if (error) throw error;
-  return (data ?? []) as Array<{ id: string; name: string; email: string }>;
-};
-
-const queueTeamEmailFanout = (
-  teamId: string,
-  context: string,
-  buildTask: (member: { id: string; name: string; email: string }) => Promise<unknown>,
-) => {
-  fireAndForget(
-    (async () => {
-      const members = await getTeamMembers(teamId);
-      await Promise.allSettled(members.map((member) => buildTask(member)));
-    })(),
-    context,
-  );
-};
-
-const escapeCsvCell = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  const normalized = text.replace(/\r?\n/g, ' ');
-  return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
-};
-
-const toCsv = (rows: Array<Record<string, unknown>>, columns: string[]): string => {
-  const header = columns.join(',');
-  const body = rows
-    .map((row) => columns.map((column) => escapeCsvCell(row[column])).join(','))
-    .join('\n');
-  return `${header}\n${body}\n`;
-};
-
-const sendCsv = (res: any, filename: string, rows: Array<Record<string, unknown>>, columns: string[]) => {
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.status(200).send(toCsv(rows, columns));
 };
 
 const getCursorPage = <T extends { created_at?: string | null; submitted_at?: string | null }>(
@@ -534,65 +468,7 @@ export const listVerificationQueue: RequestHandler = async (req, res, next) => {
 
 export const exportStudents: RequestHandler = async (_req, res, next) => {
   try {
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-
-    const { data, error } = await supabase
-      .from('users')
-      .select(
-        'id,name,email,matric_number,department,level,verification_status,verification_method,verification_timestamp,is_suspended,team_id,role,created_at',
-      )
-      .eq('role', 'student')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      if (isMissingTableError(error)) {
-        throw AppError.notFound(
-          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
-        );
-      }
-      throw error;
-    }
-
-    const rows = (data ?? []).map((user: any) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      matric_number: user.matric_number,
-      department: user.department,
-      level: user.level,
-      verification_status: user.verification_status,
-      verification_method: user.verification_method ?? '',
-      verification_timestamp: user.verification_timestamp ?? '',
-      is_suspended: user.is_suspended,
-      team_id: user.team_id ?? '',
-      role: user.role,
-      created_at: user.created_at,
-      edition_id: edition.id,
-    }));
-
-    sendCsv(
-      res,
-      `pidec-students-${edition.id}.csv`,
-      rows,
-      [
-        'id',
-        'name',
-        'email',
-        'matric_number',
-        'department',
-        'level',
-        'verification_status',
-        'verification_method',
-        'verification_timestamp',
-        'is_suspended',
-        'team_id',
-        'role',
-        'created_at',
-        'edition_id',
-      ],
-    );
+    await adminExportService.exportStudents(res);
   } catch (err) {
     next(err);
   }
@@ -600,82 +476,7 @@ export const exportStudents: RequestHandler = async (_req, res, next) => {
 
 export const exportTeams: RequestHandler = async (_req, res, next) => {
   try {
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-
-    const { data, error } = await supabase
-      .from('teams')
-      .select('*, leader:users!teams_leader_id_fkey(id,name,email), submissions(id,stage,status,submitted_at)', { count: 'exact' })
-      .eq('edition_id', edition.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true });
-
-    if (error) throw error;
-
-    const rows = (data ?? []).map((team: any) => ({
-      id: team.id,
-      edition_id: team.edition_id,
-      name: team.name,
-      department: team.department,
-      leader_id: team.leader_id,
-      leader_name: team.leader?.name ?? '',
-      leader_email: team.leader?.email ?? '',
-      current_stage: team.current_stage,
-      status: team.status,
-      disqualified_at_stage: team.disqualified_at_stage ?? '',
-      disqualified_at: team.disqualified_at ?? '',
-      disqualified_reason: team.disqualified_reason ?? '',
-      is_stage_2_representative: team.is_stage_2_representative,
-      member_count: 0,
-      submission_count: Array.isArray(team.submissions) ? team.submissions.length : 0,
-      created_at: team.created_at,
-    }));
-
-    const teamIds = rows.map((row: { id: string }) => row.id);
-    if (teamIds.length > 0) {
-      const { data: members, error: membersError } = await supabase
-        .from('users')
-        .select('team_id')
-        .in('team_id', teamIds)
-        .is('deleted_at', null);
-
-      if (membersError) throw membersError;
-
-      const memberCounts = new Map<string, number>();
-      for (const row of members ?? []) {
-        const teamId = (row as { team_id: string | null }).team_id;
-        if (!teamId) continue;
-        memberCounts.set(teamId, (memberCounts.get(teamId) ?? 0) + 1);
-      }
-
-      for (const row of rows) {
-        row.member_count = memberCounts.get(row.id as string) ?? 0;
-      }
-    }
-
-    sendCsv(
-      res,
-      `pidec-teams-${edition.id}.csv`,
-      rows,
-      [
-        'id',
-        'edition_id',
-        'name',
-        'department',
-        'leader_id',
-        'leader_name',
-        'leader_email',
-        'current_stage',
-        'status',
-        'disqualified_at_stage',
-        'disqualified_at',
-        'disqualified_reason',
-        'is_stage_2_representative',
-        'member_count',
-        'submission_count',
-        'created_at',
-      ],
-    );
+    await adminExportService.exportTeams(res);
   } catch (err) {
     next(err);
   }
@@ -683,73 +484,16 @@ export const exportTeams: RequestHandler = async (_req, res, next) => {
 
 export const exportSubmissions: RequestHandler = async (req, res, next) => {
   try {
-    const { stage } = req.query as any;
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-
-    let query = supabase
-      .from('submissions')
-      .select('*, teams!inner(id,name,department,leader_id), users!submissions_submitted_by_fkey(id,name,email)', {
-        count: 'exact',
-      })
-      .eq('edition_id', edition.id)
-      .is('deleted_at', null)
-      .order('submitted_at', { ascending: true });
-
-    if (typeof stage === 'number') query = query.eq('stage', stage);
-
-    const { data, error } = await query;
-    if (error) {
-      if (isMissingTableError(error)) {
-        res.status(200).json({ status: 'success', data: { checkpoints: [] } });
-        return;
-      }
-      throw error;
-    }
-
-    const rows = (data ?? []).map((submission: any) => ({
-      id: submission.id,
-      team_id: submission.team_id,
-      team_name: submission.teams?.name ?? '',
-      team_department: submission.teams?.department ?? '',
-      edition_id: submission.edition_id,
-      submitted_by: submission.submitted_by,
-      submitted_by_name: submission.users?.name ?? '',
-      submitted_by_email: submission.users?.email ?? '',
-      stage: submission.stage,
-      status: submission.status,
-      is_locked: submission.is_locked,
-      token_id: submission.token_id ?? '',
-      video_link: submission.video_link ?? '',
-      form_data: submission.form_data,
-      files: submission.files,
-      submitted_at: submission.submitted_at,
-      created_at: submission.created_at,
-    }));
-
-    sendCsv(
+    const stageValue = (req.query as { stage?: string | number }).stage;
+    const parsedStage =
+      typeof stageValue === 'number'
+        ? stageValue
+        : typeof stageValue === 'string' && stageValue.length > 0
+          ? Number(stageValue)
+          : undefined;
+    await adminExportService.exportSubmissions(
       res,
-      `pidec-submissions-${edition.id}${typeof stage === 'number' ? `-stage-${stage}` : ''}.csv`,
-      rows,
-      [
-        'id',
-        'team_id',
-        'team_name',
-        'team_department',
-        'edition_id',
-        'submitted_by',
-        'submitted_by_name',
-        'submitted_by_email',
-        'stage',
-        'status',
-        'is_locked',
-        'token_id',
-        'video_link',
-        'form_data',
-        'files',
-        'submitted_at',
-        'created_at',
-      ],
+      typeof parsedStage === 'number' && Number.isFinite(parsedStage) ? parsedStage : undefined,
     );
   } catch (err) {
     next(err);
@@ -758,62 +502,7 @@ export const exportSubmissions: RequestHandler = async (req, res, next) => {
 
 export const exportScores: RequestHandler = async (_req, res, next) => {
   try {
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-
-    const { data, error } = await supabase
-      .from('judge_scores')
-      .select(
-        'id,submission_id,judge_id,scores,comments,total_score,is_representative_pick,submitted_at,submissions!inner(id,team_id,stage,teams!inner(id,name,department)),judges!inner(id,name,email,stage_scope)',
-      )
-      .is('deleted_at', null)
-      .eq('submissions.edition_id', edition.id)
-      .order('submitted_at', { ascending: true });
-
-    if (error) throw error;
-
-    const rows = (data ?? []).map((score: any) => ({
-      id: score.id,
-      submission_id: score.submission_id,
-      team_id: score.submissions?.team_id ?? '',
-      team_name: score.submissions?.teams?.name ?? '',
-      team_department: score.submissions?.teams?.department ?? '',
-      submission_stage: score.submissions?.stage ?? '',
-      judge_id: score.judge_id,
-      judge_name: score.judges?.name ?? '',
-      judge_email: score.judges?.email ?? '',
-      judge_stage_scope: score.judges?.stage_scope ?? '',
-      scores: score.scores,
-      comments: score.comments,
-      total_score: score.total_score ?? '',
-      is_representative_pick: score.is_representative_pick,
-      submitted_at: score.submitted_at,
-      edition_id: edition.id,
-    }));
-
-    sendCsv(
-      res,
-      `pidec-scores-${edition.id}.csv`,
-      rows,
-      [
-        'id',
-        'submission_id',
-        'team_id',
-        'team_name',
-        'team_department',
-        'submission_stage',
-        'judge_id',
-        'judge_name',
-        'judge_email',
-        'judge_stage_scope',
-        'scores',
-        'comments',
-        'total_score',
-        'is_representative_pick',
-        'submitted_at',
-        'edition_id',
-      ],
-    );
+    await adminExportService.exportScores(res);
   } catch (err) {
     next(err);
   }
@@ -1263,90 +952,11 @@ export const applyTeamAction: RequestHandler = async (req, res, next) => {
       reason?: string;
       atStage?: 1 | 2 | 3;
     };
-
-    const supabase = getSupabaseService() as any;
-
-    if (action === 'advance') {
-      const { data: team, error: teamError } = await supabase
-        .from('teams')
-        .select('*')
-        .eq('id', teamId)
-        .is('deleted_at', null)
-        .maybeSingle();
-      if (teamError) throw teamError;
-      if (!team) throw AppError.notFound('Team not found');
-
-      const nextStage = Math.min(3, team.current_stage + 1);
-      const advancedStage = nextStage === 2 ? 2 : 3;
-      const { data, error } = await supabase
-        .from('teams')
-        .update({ current_stage: nextStage } as never)
-        .eq('id', teamId)
-        .select('*')
-        .single();
-      if (error) throw error;
-      queueTeamEmailFanout(teamId, 'team advanced emails', (member) =>
-        getEmailService().sendStageAdvanced(
-          { to: member.email, name: member.name },
-          {
-            recipientName: member.name,
-            teamName: team.name,
-            newStage: advancedStage,
-            dashboardUrl: `${env.APP_URL}/dashboard`,
-          },
-        ),
-      );
-      return res.status(200).json({ status: 'success', data: { team: data } });
-    }
-
-    if (action === 'disqualify') {
-      const { data: teamRecord, error: teamRecordError } = await supabase
-        .from('teams')
-        .select('id,name')
-        .eq('id', teamId)
-        .is('deleted_at', null)
-        .maybeSingle();
-      if (teamRecordError) throw teamRecordError;
-      if (!teamRecord) throw AppError.notFound('Team not found');
-
-      const { data, error } = await supabase
-        .from('teams')
-        .update({
-          status: 'disqualified',
-          disqualified_at_stage: atStage,
-          disqualified_at: new Date().toISOString(),
-          disqualified_reason: reason ?? null,
-        } as never)
-        .eq('id', teamId)
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      queueTeamEmailFanout(teamId, 'team disqualified emails', (member) =>
-        getEmailService().sendTeamDisqualified(
-          { to: member.email, name: member.name },
-          {
-            recipientName: member.name,
-            teamName: teamRecord.name,
-            stage: atStage ?? 1,
-            reason: reason ?? 'Your team has been disqualified.',
-          },
-        ),
-      );
-      return res.status(200).json({ status: 'success', data: { team: data } });
-    }
-
-    const { data, error } = await supabase
-      .from('submissions')
-      .update({ is_locked: false } as never)
-      .eq('team_id', teamId)
-      .order('submitted_at', { ascending: false })
-      .limit(1)
-      .select('*');
-
-    if (error) throw error;
-
-    return res.status(200).json({ status: 'success', data: { unlocked: data?.[0] ?? null } });
+    const result = await adminOrchestrationService.applyTeamAction(teamId, action, {
+      ...(reason !== undefined ? { reason } : {}),
+      ...(atStage !== undefined ? { atStage } : {}),
+    });
+    return res.status(200).json({ status: 'success', data: result.team ? { team: result.team } : { unlocked: result.unlocked } });
   } catch (err) {
     next(err);
   }
@@ -1357,35 +967,7 @@ export const generateDepartmentToken: RequestHandler = async (req, res, next) =>
     if (!req.user) throw AppError.unauthenticated();
 
     const { department, expiresAt } = req.body as { department: string; expiresAt?: string };
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-
-    const { error: retireError } = await supabase
-      .from('tokens')
-      .update({ deleted_at: new Date().toISOString() } as never)
-      .eq('edition_id', edition.id)
-      .eq('department', department)
-      .is('deleted_at', null);
-
-    if (retireError) throw retireError;
-
-    const tokenString = generateTokenString();
-    const { data, error } = await supabase
-      .from('tokens')
-      .insert([
-        {
-          edition_id: edition.id,
-          department,
-          token_string: tokenString,
-          expires_at: expiresAt ?? null,
-          created_by: req.user.id,
-        },
-      ] as never[])
-      .select('*')
-      .single();
-
-    if (error) throw error;
-
+    const data = await adminOrchestrationService.generateDepartmentToken(req.user.id, department, expiresAt);
     res.status(201).json({ status: 'success', data: { token: data } });
   } catch (err) {
     next(err);
@@ -1397,35 +979,7 @@ export const regenerateDepartmentToken: RequestHandler = async (req, res, next) 
     if (!req.user) throw AppError.unauthenticated();
 
     const { department, expiresAt } = req.body as { department: string; expiresAt?: string };
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-
-    const { error: retireError } = await supabase
-      .from('tokens')
-      .update({ deleted_at: new Date().toISOString() } as never)
-      .eq('edition_id', edition.id)
-      .eq('department', department)
-      .is('deleted_at', null);
-
-    if (retireError) throw retireError;
-
-    const tokenString = generateTokenString();
-    const { data, error } = await supabase
-      .from('tokens')
-      .insert([
-        {
-          edition_id: edition.id,
-          department,
-          token_string: tokenString,
-          expires_at: expiresAt ?? null,
-          created_by: req.user.id,
-        },
-      ] as never[])
-      .select('*')
-      .single();
-
-    if (error) throw error;
-
+    const data = await adminOrchestrationService.generateDepartmentToken(req.user.id, department, expiresAt);
     res.status(201).json({ status: 'success', data: { token: data } });
   } catch (err) {
     next(err);
@@ -1435,8 +989,6 @@ export const regenerateDepartmentToken: RequestHandler = async (req, res, next) 
 export const createJudge: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
 
     const { email, name, stageScope, assignedDepartments } = req.body as {
       email: string;
@@ -1444,85 +996,12 @@ export const createJudge: RequestHandler = async (req, res, next) => {
       stageScope: 'stage_1' | 'stage_2';
       assignedDepartments: string[];
     };
-
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (userError) throw userError;
-    if (user) throw new AppError(ERROR_CODES.DUPLICATE_ENTRY, 'A user account already exists for this email');
-
-    const generatedPassword = randomBytes(24).toString('hex');
-    const passwordHash = await hashPassword(generatedPassword);
-
-    let createdUser: { id: string; email: string; name: string } | null = null;
-    let lastInsertError: unknown = null;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const { data: insertedUser, error: insertUserError } = await supabase
-        .from('users')
-        .insert([
-          {
-            name,
-            email,
-            matric_number: generateSystemMatricNumber(),
-            department: 'JUDGE',
-            level: 500,
-            verification_status: 'verified',
-            verification_method: 'manual',
-            verification_timestamp: new Date().toISOString(),
-            password_hash: passwordHash,
-            role: 'judge',
-          },
-        ] as never[])
-        .select('id,email,name')
-        .single();
-
-      if (!insertUserError && insertedUser) {
-        createdUser = insertedUser;
-        break;
-      }
-
-      lastInsertError = insertUserError;
-      const message = String((insertUserError as { message?: string } | null)?.message ?? '');
-      if (!message.includes('idx_users_matric_unique')) {
-        throw insertUserError;
-      }
-    }
-
-    if (!createdUser) {
-      throw lastInsertError instanceof Error ? lastInsertError : AppError.internal('Could not create judge account');
-    }
-
-    const { data, error } = await supabase
-      .from('judges')
-      .insert([
-        {
-          id: createdUser.id,
-          edition_id: edition.id,
-          name,
-          email,
-          stage_scope: stageScope,
-          assigned_departments: assignedDepartments,
-          created_by: req.user.id,
-          is_active: true,
-        },
-      ] as never[])
-      .select('*')
-      .single();
-
-    if (error) {
-      if (isMissingTableError(error)) {
-        throw AppError.notFound(
-          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
-        );
-      }
-      throw error;
-    }
-    fireAndForget(authService.requestPasswordReset(createdUser.email), 'judge onboarding password reset email');
-
+    const data = await adminOrchestrationService.createJudge(req.user.id, {
+      email,
+      name,
+      stageScope,
+      assignedDepartments,
+    });
     res.status(201).json({ status: 'success', data: { judge: data } });
   } catch (err) {
     next(err);
@@ -1569,50 +1048,14 @@ export const enterFeedback: RequestHandler = async (req, res, next) => {
       evaluationDate?: string;
     };
 
-    const supabase = getSupabaseService() as any;
-
-    const feedbackPayload = {
-      submission_id: submissionId,
+    const data = await adminOrchestrationService.enterFeedback(req.user.id, submissionId, {
       scores,
       comments,
-      total_score: totalScore,
+      totalScore,
       outcome,
-      entered_by_admin: req.user.id,
-      evaluator_name: evaluatorName,
-      evaluation_date: evaluationDate ?? null,
-    };
-
-    const { data: existingFeedback, error: existingFeedbackError } = await supabase
-      .from('feedback')
-      .select('id')
-      .eq('submission_id', submissionId)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (existingFeedbackError) throw existingFeedbackError;
-
-    const feedbackMutation = existingFeedback
-      ? supabase
-          .from('feedback')
-          .update(feedbackPayload as never)
-          .eq('id', existingFeedback.id)
-      : supabase
-          .from('feedback')
-          .insert([feedbackPayload] as never[]);
-
-    const { data, error } = await feedbackMutation
-      .select('*')
-      .single();
-
-    if (error) {
-      if (isMissingTableError(error)) {
-        throw AppError.notFound(
-          'Stage 2 checkpoints are unavailable until migration 0020_stage_2_checkpoints.sql is applied',
-        );
-      }
-      throw error;
-    }
-
+      evaluatorName,
+      ...(evaluationDate !== undefined ? { evaluationDate } : {}),
+    });
     res.status(200).json({ status: 'success', data: { feedback: data } });
   } catch (err) {
     next(err);
@@ -1624,51 +1067,7 @@ export const publishFeedback: RequestHandler = async (req, res, next) => {
     if (!req.user) throw AppError.unauthenticated();
 
     const { submissionIds } = req.body as { submissionIds: string[] };
-    const supabase = getSupabaseService() as any;
-    const now = new Date().toISOString();
-
-    const { data, error } = await supabase
-      .from('feedback')
-      .update({ published: true, published_at: now, published_by: req.user.id } as never)
-      .in('submission_id', submissionIds)
-      .select('*');
-
-    if (error) throw error;
-
-    const { error: submissionStatusError } = await supabase
-      .from('submissions')
-      .update({ status: 'feedback_published' } as never)
-      .in('id', submissionIds);
-
-    if (submissionStatusError) throw submissionStatusError;
-
-    const { data: feedbackRecipients, error: feedbackRecipientsError } = await supabase
-      .from('submissions')
-      .select('id,stage,teams!inner(id,name), users!submissions_submitted_by_fkey(id,name,email)')
-      .in('id', submissionIds)
-      .is('deleted_at', null);
-
-    if (feedbackRecipientsError) throw feedbackRecipientsError;
-
-    for (const row of feedbackRecipients ?? []) {
-      const recipient = (row as { users?: { name?: string; email?: string } | null }).users;
-      const team = (row as { teams?: { name?: string } | null }).teams;
-      if (!recipient?.email || !recipient.name || !team?.name) continue;
-
-      fireAndForget(
-        getEmailService().sendFeedbackPublished(
-          { to: recipient.email, name: recipient.name },
-          {
-            recipientName: recipient.name,
-            teamName: team.name,
-            stage: (row as { stage: 1 | 2 | 3 }).stage,
-            feedbackUrl: `${env.APP_URL}/dashboard/feedback`,
-          },
-        ),
-        `feedback published email for submission ${(row as { id: string }).id}`,
-      );
-    }
-
+    const data = await adminOrchestrationService.publishFeedback(req.user.id, submissionIds);
     res.status(200).json({ status: 'success', data: { feedback: data ?? [] } });
   } catch (err) {
     next(err);

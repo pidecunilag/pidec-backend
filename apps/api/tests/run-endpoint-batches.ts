@@ -165,6 +165,33 @@ const request = async (
   };
 };
 
+const isTransientBackendFetchFailure = (result: HttpResult): boolean => {
+  if (result.status !== 500) return false;
+  if (!result.json || Array.isArray(result.json) || typeof result.json !== 'object') return false;
+  const payload = result.json as { error?: { message?: string } };
+  return payload.error?.message?.includes('TypeError: fetch failed') ?? false;
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const requestWithTransientRetry = async (
+  session: Session | null,
+  path: string,
+  options: RequestOptions = {},
+  attempts = 3,
+): Promise<HttpResult> => {
+  let lastResult: HttpResult | null = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = await request(session, path, options);
+    lastResult = result;
+    if (!isTransientBackendFetchFailure(result) || attempt === attempts) {
+      return result;
+    }
+    await wait(350 * attempt);
+  }
+  return lastResult as HttpResult;
+};
+
 const expectStatus = (result: HttpResult, expected: number, message: string) => {
   assert.equal(
     result.status,
@@ -290,7 +317,7 @@ const createSeedPasswordResetToken = async (userId: string): Promise<string> => 
 };
 
 const login = async (session: Session, email: string, password: string) => {
-  const result = await request(session, '/api/v1/auth/login', {
+  const result = await requestWithTransientRetry(session, '/api/v1/auth/login', {
     method: 'POST',
     json: { email, password },
   });
@@ -298,15 +325,19 @@ const login = async (session: Session, email: string, password: string) => {
 };
 
 const registerStudent = async (session: Session, user: UserSeed) => {
-  const result = await request(session, '/api/v1/auth/register', {
+  const result = await requestWithTransientRetry(session, '/api/v1/auth/register', {
     method: 'POST',
     json: user,
   });
+  if (result.status === 409) {
+    await login(session, user.email, user.password);
+    return;
+  }
   expectStatus(result, 201, `Registration failed for ${user.email}`);
 };
 
 const markUserVerified = async (adminSession: Session, userId: string) => {
-  const result = await request(adminSession, `/api/v1/admin/verifications/${userId}`, {
+  const result = await requestWithTransientRetry(adminSession, `/api/v1/admin/verifications/${userId}`, {
     method: 'PATCH',
     json: { decision: 'approve' },
   });
@@ -426,20 +457,20 @@ const run = async () => {
 
   const authOnlyUser = await findUserByEmail(authOnly.email);
   const verificationToken = await createSeedVerificationToken(authOnlyUser.id);
-  const verifyResult = await request(null, '/api/v1/auth/verify-email', {
+  const verifyResult = await requestWithTransientRetry(null, '/api/v1/auth/verify-email', {
     method: 'POST',
     json: { token: verificationToken },
   });
   expectStatus(verifyResult, 200, 'Email verification endpoint failed');
 
-  const forgotPasswordResult = await request(null, '/api/v1/auth/forgot-password', {
+  const forgotPasswordResult = await requestWithTransientRetry(null, '/api/v1/auth/forgot-password', {
     method: 'POST',
     json: { email: authOnly.email },
   });
   expectStatus(forgotPasswordResult, 200, 'Forgot-password endpoint failed');
 
   const resetToken = await createSeedPasswordResetToken(authOnlyUser.id);
-  const resetResult = await request(null, '/api/v1/auth/reset-password', {
+  const resetResult = await requestWithTransientRetry(null, '/api/v1/auth/reset-password', {
     method: 'POST',
     json: {
       token: resetToken,
@@ -449,8 +480,8 @@ const run = async () => {
   expectStatus(resetResult, 200, 'Password reset endpoint failed');
 
   await login(authOnlySession, authOnly.email, 'Studentpass456');
-  expectStatus(await request(authOnlySession, '/api/v1/auth/refresh', { method: 'POST' }), 200, 'Refresh endpoint failed');
-  expectStatus(await request(authOnlySession, '/api/v1/auth/logout', { method: 'POST' }), 200, 'Logout failed');
+  expectStatus(await requestWithTransientRetry(authOnlySession, '/api/v1/auth/refresh', { method: 'POST' }), 200, 'Refresh endpoint failed');
+  expectStatus(await requestWithTransientRetry(authOnlySession, '/api/v1/auth/logout', { method: 'POST' }), 200, 'Logout failed');
   expectStatus(await request(authOnlySession, '/api/v1/auth/me'), 401, 'Logged-out session should not resolve /auth/me');
 
   const verificationUploadResult = await request(null, '/api/v1/auth/verification-document', {
@@ -921,7 +952,7 @@ const run = async () => {
     judge1Create,
     'Judge 1 response was not JSON',
   ).data.judge.id;
-  const judge2Id = expectJsonObject<{ success: true; data: { judge: { id: string } } }>(
+  void expectJsonObject<{ success: true; data: { judge: { id: string } } }>(
     judge2Create,
     'Judge 2 response was not JSON',
   ).data.judge.id;

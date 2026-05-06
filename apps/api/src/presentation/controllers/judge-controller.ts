@@ -1,97 +1,12 @@
 import { type RequestHandler } from 'express';
-import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { AppError } from '../../shared/errors/app-error.js';
-
-const getActiveEdition = async () => {
-  const supabase = getSupabaseService() as any;
-  const { data, error } = await supabase
-    .from('editions')
-    .select('id,active_stage')
-    .eq('is_active', true)
-    .is('deleted_at', null)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) throw AppError.notFound('No active edition configured');
-  return data;
-};
-
-const getJudgeProfile = async (judgeId: string) => {
-  const supabase = getSupabaseService() as any;
-  const { data, error } = await supabase
-    .from('judges')
-    .select('*')
-    .eq('id', judgeId)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) throw AppError.forbidden('Judge profile is not active');
-  return data;
-};
-
-const upsertJudgeScore = async (
-  submissionId: string,
-  judgeId: string,
-  payload: {
-    scores: Record<string, number>;
-    comments: Record<string, string> | { note?: string };
-    total_score: number | null;
-    is_representative_pick: boolean;
-  },
-) => {
-  const supabase = getSupabaseService() as any;
-  const { data: existingScore, error: existingScoreError } = await supabase
-    .from('judge_scores')
-    .select('id')
-    .eq('submission_id', submissionId)
-    .eq('judge_id', judgeId)
-    .is('deleted_at', null)
-    .maybeSingle();
-
-  if (existingScoreError) throw existingScoreError;
-
-  const scorePayload = {
-    submission_id: submissionId,
-    judge_id: judgeId,
-    scores: payload.scores,
-    comments: payload.comments,
-    total_score: payload.total_score,
-    is_representative_pick: payload.is_representative_pick,
-    submitted_at: new Date().toISOString(),
-  };
-
-  const mutation = existingScore
-    ? supabase
-        .from('judge_scores')
-        .update(scorePayload as never)
-        .eq('id', existingScore.id)
-    : supabase
-        .from('judge_scores')
-        .insert([scorePayload] as never[]);
-
-  const { data, error } = await mutation
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return data;
-};
+import { judgeApplicationService } from '../../application/judge/judge-application-service.js';
 
 export const getJudgeInfo: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
-
-    const edition = await getActiveEdition();
-    const judge = await getJudgeProfile(req.user.id);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        judge,
-        edition,
-      },
-    });
+    const data = await judgeApplicationService.getJudgeInfo(req.user.id);
+    res.status(200).json({ status: 'success', data });
   } catch (err) {
     next(err);
   }
@@ -100,39 +15,9 @@ export const getJudgeInfo: RequestHandler = async (req, res, next) => {
 export const listJudgeSubmissions: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
-
     const requestedStage = Number((req.query as { stage?: string }).stage ?? 1);
-    const stage = requestedStage;
-    if (![1, 2, 3].includes(stage)) throw AppError.validation('Invalid stage');
-
-    const supabase = getSupabaseService() as any;
-    const edition = await getActiveEdition();
-    const judge = await getJudgeProfile(req.user.id);
-    const allowedStage = judge.stage_scope === 'stage_1' ? 1 : 2;
-    if (stage !== allowedStage) {
-      throw AppError.forbidden('Requested stage is outside judge scope');
-    }
-    if (edition.active_stage < allowedStage) {
-      throw AppError.forbidden('Judge submissions are not available for this stage yet');
-    }
-
-    const { data, error } = await supabase
-      .from('submissions')
-      .select(
-        '*, teams!inner(id,name,department,status), users!submissions_submitted_by_fkey(id,name,email)',
-      )
-      .eq('edition_id', edition.id)
-      .eq('stage', stage)
-      .is('deleted_at', null)
-      .in('teams.department', judge.assigned_departments)
-      .order('submitted_at', { ascending: false });
-
-    if (error) throw error;
-
-    res.status(200).json({
-      status: 'success',
-      data: { submissions: data ?? [] },
-    });
+    const submissions = await judgeApplicationService.listJudgeSubmissions(req.user.id, requestedStage);
+    res.status(200).json({ status: 'success', data: { submissions } });
   } catch (err) {
     next(err);
   }
@@ -141,42 +26,17 @@ export const listJudgeSubmissions: RequestHandler = async (req, res, next) => {
 export const pickStage1Representative: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
-
     const { submissionId, comments } = req.body as { submissionId: string; comments?: string };
-    const supabase = getSupabaseService() as any;
-
-    const judge = await getJudgeProfile(req.user.id);
-    if (judge.stage_scope !== 'stage_1') {
-      throw AppError.forbidden('Judge is not scoped for Stage 1');
-    }
-
-    const { data: submission, error: submissionError } = await supabase
-      .from('submissions')
-      .select('*, teams!inner(id,department)')
-      .eq('id', submissionId)
-      .eq('stage', 1)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (submissionError) throw submissionError;
-    if (!submission) throw AppError.notFound('Stage 1 submission not found');
-
-    const dept = (submission as unknown as { teams: { department: string } }).teams.department;
-    if (!judge.assigned_departments.includes(dept)) {
-      throw AppError.forbidden('Submission is outside judge department scope');
-    }
-
-    const score = await upsertJudgeScore(submissionId, req.user.id, {
-      scores: {},
-      comments: comments ? { note: comments } : {},
-      total_score: null,
-      is_representative_pick: true,
-    });
-
-    res.status(200).json({
-      status: 'success',
-      data: { score },
-    });
+    const { assigned_departments } = await judgeApplicationService.getJudgeInfo(req.user.id).then((data) => data.judge);
+    const department = assigned_departments[0];
+    if (!department) throw AppError.forbidden('Judge does not have an assigned department');
+    const score = await judgeApplicationService.pickDepartmentRepresentative(
+      req.user.id,
+      department,
+      submissionId,
+      comments,
+    );
+    res.status(200).json({ status: 'success', data: { score } });
   } catch (err) {
     next(err);
   }
@@ -185,30 +45,17 @@ export const pickStage1Representative: RequestHandler = async (req, res, next) =
 export const pickDepartmentRepresentative: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
-
     const { deptId } = req.params as { deptId: string };
     const { submissionId, comments } = req.body as { submissionId?: string; comments?: string };
     if (!submissionId) throw AppError.validation('Submission id is required');
 
-    const supabase = getSupabaseService() as any;
-    const { data: submission, error } = await supabase
-      .from('submissions')
-      .select('id, teams!inner(department)')
-      .eq('id', submissionId)
-      .eq('stage', 1)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!submission) throw AppError.notFound('Stage 1 submission not found');
-
-    const submissionDepartment = (submission as { teams: { department: string } }).teams.department;
-    if (submissionDepartment !== deptId) {
-      throw AppError.validation('Submission does not belong to the requested department');
-    }
-
-    req.body = { submissionId, comments };
-    return pickStage1Representative(req, res, next);
+    const score = await judgeApplicationService.pickDepartmentRepresentative(
+      req.user.id,
+      deptId,
+      submissionId,
+      comments,
+    );
+    res.status(200).json({ status: 'success', data: { score } });
   } catch (err) {
     next(err);
   }
@@ -217,56 +64,18 @@ export const pickDepartmentRepresentative: RequestHandler = async (req, res, nex
 export const submitStage2Score: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
-
     const { submissionId, scores, comments } = req.body as {
       submissionId: string;
       scores: Record<string, number>;
       comments: Record<string, string>;
     };
-
-    const supabase = getSupabaseService() as any;
-    const judge = await getJudgeProfile(req.user.id);
-    if (judge.stage_scope !== 'stage_2') {
-      throw AppError.forbidden('Judge is not scoped for Stage 2');
-    }
-
-    const { data: submission, error: submissionError } = await supabase
-      .from('submissions')
-      .select('*, teams!inner(id,department)')
-      .eq('id', submissionId)
-      .eq('stage', 2)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (submissionError) throw submissionError;
-    if (!submission) throw AppError.notFound('Stage 2 submission not found');
-
-    const dept = (submission as unknown as { teams: { department: string } }).teams.department;
-    if (!judge.assigned_departments.includes(dept)) {
-      throw AppError.forbidden('Submission is outside judge department scope');
-    }
-
-    const numericValues = Object.values(scores);
-    const totalScore =
-      numericValues.length > 0
-        ? Number(
-            (numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length).toFixed(
-              2,
-            ),
-          )
-        : null;
-
-    const score = await upsertJudgeScore(submissionId, req.user.id, {
+    const score = await judgeApplicationService.submitStage2Score(
+      req.user.id,
+      submissionId,
       scores,
       comments,
-      total_score: totalScore,
-      is_representative_pick: false,
-    });
-
-    res.status(200).json({
-      status: 'success',
-      data: { score },
-    });
+    );
+    res.status(200).json({ status: 'success', data: { score } });
   } catch (err) {
     next(err);
   }

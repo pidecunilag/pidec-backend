@@ -17,7 +17,6 @@ module.exports = {
         'src/presentation/routes/**/*.ts',
         'src/infrastructure/**/*.ts',
         'src/infrastructure/**/*.tsx',
-        'src/application/**/*.ts',
         'src/index.ts',
         'src/app.ts',
       ],
