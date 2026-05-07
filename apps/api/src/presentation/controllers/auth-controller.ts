@@ -33,6 +33,28 @@ const clearAuthCookieOptions = {
   ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
 };
 
+const resolveRefreshToken = (req: Parameters<RequestHandler>[0]) => {
+  const body = req.body as { refreshToken?: unknown } | undefined;
+  const bodyToken = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
+  if (bodyToken) {
+    return bodyToken;
+  }
+
+  const headerToken = req.headers['x-refresh-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) {
+    return headerToken.trim();
+  }
+
+  const bearer = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice('Bearer '.length).trim()
+    : '';
+  if (bearer) {
+    return bearer;
+  }
+
+  return (req as unknown as { cookies?: Record<string, string> }).cookies?.['refresh-token'] ?? null;
+};
+
 const resolveVerificationUploadTarget = async (req: Parameters<RequestHandler>[0]) => {
   if (req.user) {
     return req.user.id;
@@ -115,8 +137,8 @@ export const register: RequestHandler = async (req, res, next) => {
       // Don't fail registration if email sending fails
     }
 
-    // Create an authenticated session immediately so the client can continue
-    // onboarding flows like document upload and verification polling.
+    // Keep legacy cookie sessions for same-site deployments while also returning
+    // bearer tokens in JSON for simpler cross-site frontend integrations.
     res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
     res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
@@ -132,6 +154,8 @@ export const register: RequestHandler = async (req, res, next) => {
           name: user.name,
           role: user.role,
         },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       },
     });
   } catch (err) {
@@ -150,7 +174,8 @@ export const login: RequestHandler = async (req, res, next) => {
 
     const { user, tokens } = await authService.login(email, password);
 
-    // Refresh the browser session cookies on successful login.
+    // Keep legacy cookie sessions for same-site deployments while also returning
+    // bearer tokens in JSON for simpler cross-site frontend integrations.
     res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
 
     res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
@@ -166,6 +191,8 @@ export const login: RequestHandler = async (req, res, next) => {
           name: user.name,
           role: user.role,
         },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       },
     });
   } catch (err) {
@@ -180,8 +207,7 @@ export const login: RequestHandler = async (req, res, next) => {
  */
 export const refresh: RequestHandler = async (req, res, next) => {
   try {
-    const refreshToken =
-      (req as unknown as { cookies?: Record<string, string> }).cookies?.['refresh-token'] ?? null;
+    const refreshToken = resolveRefreshToken(req);
 
     if (!refreshToken) {
       throw AppError.unauthenticated('Refresh token missing');
@@ -247,6 +273,8 @@ export const refresh: RequestHandler = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       data: {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
         refreshed: true,
       },
     });
@@ -261,8 +289,7 @@ export const refresh: RequestHandler = async (req, res, next) => {
  * No body required.
  */
 export const logout: RequestHandler = async (req, res) => {
-  const refreshToken =
-    (req as unknown as { cookies?: Record<string, string> }).cookies?.['refresh-token'] ?? null;
+  const refreshToken = resolveRefreshToken(req);
   if (refreshToken) {
     try {
       const payload = verifyToken(refreshToken);

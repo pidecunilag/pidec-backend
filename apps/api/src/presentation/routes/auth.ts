@@ -27,21 +27,23 @@ import {
   LoginSchema,
   VerifyEmailSchema,
   ForgotPasswordSchema,
+  RefreshSessionSchema,
+  LogoutSchema,
   PasswordResetSchema,
-} from '@pidec/shared';
+} from '@pidec/shared/schemas';
 
 const authRouter = Router();
 
 // Public routes (no authentication required)
 authRouter.post('/register', registerRateLimiter, validate(RegisterSchema), register);
 authRouter.post('/login', loginRateLimiter, validate(LoginSchema), login);
-authRouter.post('/refresh', refreshRateLimiter, refresh);
+authRouter.post('/refresh', refreshRateLimiter, validate(RefreshSessionSchema), refresh);
 authRouter.post('/verify-email', verifyEmailRateLimiter, validate(VerifyEmailSchema), verifyEmailToken);
 authRouter.post('/forgot-password', forgotPasswordRateLimiter, validate(ForgotPasswordSchema), forgotPassword);
 authRouter.post('/reset-password', passwordResetRateLimiter, validate(PasswordResetSchema), resetPassword);
 
 // Protected routes (authentication required)
-authRouter.post('/logout', requireAuth, logout);
+authRouter.post('/logout', requireAuth, validate(LogoutSchema), logout);
 authRouter.get('/me', requireAuth, me);
 authRouter.post(
   '/verification-document',

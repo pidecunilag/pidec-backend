@@ -62,6 +62,18 @@ export const LoginSchema = z.object({
 
 export type LoginInput = z.infer<typeof LoginSchema>;
 
+export const RefreshSessionSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token is required').optional(),
+});
+
+export type RefreshSessionInput = z.infer<typeof RefreshSessionSchema>;
+
+export const LogoutSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token is required').optional(),
+});
+
+export type LogoutInput = z.infer<typeof LogoutSchema>;
+
 export const ReuploadDocSchema = z.object({
   // The file itself is validated separately (multipart upload). This schema
   // covers any sidecar fields submitted with the re-upload.
