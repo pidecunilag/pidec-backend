@@ -21,8 +21,7 @@ declare global {
 }
 
 /**
- * Reads a JWT access token from the `access-token` HTTP-only cookie or
- * the `Authorization: Bearer` header, verifies it using our custom JWT secret,
+ * Reads a JWT access token from the `Authorization: Bearer` header, verifies it using our custom JWT secret,
  * and attaches the user to req.user.
  *
  * Throws AUTH_REQUIRED if no valid token is present.
@@ -32,10 +31,7 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
     const bearer = req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.slice('Bearer '.length)
       : null;
-    const cookieToken =
-      (req as unknown as { cookies?: Record<string, string> }).cookies?.['access-token'] ?? null;
-
-    const token = bearer ?? cookieToken;
+    const token = bearer;
     if (!token) throw AppError.unauthenticated();
 
     // Verify JWT token with custom secret

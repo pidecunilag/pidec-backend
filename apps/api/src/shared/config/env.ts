@@ -13,8 +13,6 @@ const EnvSchema = z.object({
   API_HOST: z.string().min(1).default('0.0.0.0'),
   APP_URL: z.string().url().default('http://localhost:3000'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:3000'),
-  COOKIE_DOMAIN: z.string().optional(),
-  COOKIE_SAME_SITE: z.enum(['strict', 'lax', 'none']).default('strict'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   AUTH_TOKEN_ISSUER: z.string().min(1).default('pidec-api'),
   AUTH_ACCESS_TOKEN_SECRET: z.string().min(32).optional(),

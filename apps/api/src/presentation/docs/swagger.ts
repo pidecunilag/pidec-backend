@@ -60,12 +60,6 @@ export const swaggerDocument = {
   ],
   components: {
     securitySchemes: {
-      cookieAuth: {
-        type: 'apiKey',
-        in: 'cookie',
-        name: 'access-token',
-        description: 'HTTP-only access token cookie.',
-      },
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
@@ -194,7 +188,7 @@ export const swaggerDocument = {
           refreshToken: {
             type: 'string',
             description:
-              'Required for bearer-token clients. Legacy cookie-based clients may omit this if a refresh cookie is still present.',
+              'Required for bearer-token clients. May also be sent in the x-refresh-token header or Authorization bearer header.',
           },
         },
       },
@@ -335,7 +329,7 @@ export const swaggerDocument = {
             type: 'string',
             format: 'email',
             description:
-              'Required when the request is unauthenticated. Ignored when a valid auth cookie or bearer token is present.',
+              'Required when the request is unauthenticated. Ignored when a valid bearer access token is present.',
           },
           matricNumber: {
             type: 'string',
@@ -552,7 +546,6 @@ export const swaggerDocument = {
     },
   },
   security: [
-    { cookieAuth: [] },
     { bearerAuth: [] },
   ],
   tags: [
@@ -591,7 +584,7 @@ export const swaggerDocument = {
         tags: ['Auth'],
         summary: 'Register a new student account',
         description:
-          'Creates the student account, sends the email verification message, and returns an authenticated session immediately. The response includes user details plus accessToken and refreshToken for bearer-token clients. Legacy same-site deployments also continue to receive HTTP-only cookies.',
+          'Creates the student account, sends the email verification message, and returns an authenticated bearer-token session immediately. The response includes user details plus accessToken and refreshToken.',
         security: [],
         requestBody: jsonBody({ $ref: '#/components/schemas/RegisterRequest' }),
         responses: {
@@ -607,7 +600,7 @@ export const swaggerDocument = {
         tags: ['Auth'],
         summary: 'Log in with email and password',
         description:
-          'Returns user details plus accessToken and refreshToken in the response body. Legacy same-site deployments also continue to receive HTTP-only cookies.',
+          'Returns user details plus accessToken and refreshToken in the response body.',
         security: [],
         requestBody: jsonBody({ $ref: '#/components/schemas/LoginRequest' }),
         responses: {
@@ -623,7 +616,7 @@ export const swaggerDocument = {
         tags: ['Auth'],
         summary: 'Rotate the refresh session and issue fresh auth tokens',
         description:
-          'Bearer-token clients should send refreshToken in the JSON body. Legacy clients may still rely on a refresh cookie. The response returns fresh accessToken and refreshToken and also refreshes legacy cookies when present.',
+          'Bearer-token clients should send refreshToken in the JSON body, x-refresh-token header, or Authorization bearer header. The response returns fresh accessToken and refreshToken.',
         requestBody: jsonBody({ $ref: '#/components/schemas/RefreshSessionRequest' }, false),
         responses: {
           200: successResponse('Session refreshed'),
@@ -675,7 +668,7 @@ export const swaggerDocument = {
         tags: ['Auth'],
         summary: 'Log out the current user',
         description:
-          'Requires an authenticated access token. Bearer-token clients should also provide refreshToken in the JSON body so the backend can revoke the corresponding refresh session.',
+          'Requires an authenticated access token. Clients should also provide refreshToken in the JSON body so the backend can revoke the corresponding refresh session.',
         requestBody: jsonBody({ $ref: '#/components/schemas/LogoutRequest' }, false),
         responses: {
           200: successResponse('Logout successful'),
@@ -698,7 +691,7 @@ export const swaggerDocument = {
         tags: ['Auth'],
         summary: 'Upload a verification document',
         description:
-          'Queues asynchronous AI verification. If the caller is already authenticated, only the document field is required. If the caller is not authenticated, the multipart body must also include email and matricNumber.',
+          'Queues asynchronous AI verification. If the caller is already authenticated with a bearer access token, only the document field is required. If the caller is not authenticated, the multipart body must also include email and matricNumber.',
         requestBody: multipartBody({ $ref: '#/components/schemas/VerificationUploadRequest' }),
         responses: {
           202: successResponse('Verification document queued'),
@@ -727,7 +720,7 @@ export const swaggerDocument = {
         tags: ['Auth'],
         summary: 'Get current verification status',
         description:
-          'Returns the verification workflow state for the authenticated session user. This is intended to be polled after registration and upload, so the client must send the access token on each request or use a valid legacy session cookie.',
+          'Returns the verification workflow state for the authenticated session user. This is intended to be polled after registration and upload, so the client must send the access token on each request.',
         responses: {
           200: successResponse('Verification status returned'),
           401: errorResponse('Authentication required'),

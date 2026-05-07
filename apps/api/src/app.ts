@@ -1,5 +1,4 @@
 import express, { type Express } from 'express';
-import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 import {
   corsMiddleware,
@@ -34,7 +33,6 @@ export const createApp = (): Express => {
   // Parsers
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
-  app.use(cookieParser());
   app.use(globalRateLimiter);
   app.use(originCheckMiddleware);
   app.use(responseEnvelopeMiddleware);

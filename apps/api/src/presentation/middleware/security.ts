@@ -24,9 +24,9 @@ export const securityHeaders: RequestHandler = helmet({
 /** CORS — only the configured origin is allowed (master spec security §). */
 export const corsMiddleware: RequestHandler = cors({
   origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()),
-  credentials: true,
+  credentials: false,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-refresh-token'],
   maxAge: 86_400,
 });
 
@@ -36,12 +36,6 @@ const allowedHosts = new Set([...allowedOrigins].map((origin) => new URL(origin)
 
 export const originCheckMiddleware: RequestHandler = (req, _res, next) => {
   if (!stateChangingMethods.has(req.method)) {
-    next();
-    return;
-  }
-
-  const hasBearerToken = req.headers.authorization?.startsWith('Bearer ');
-  if (hasBearerToken) {
     next();
     return;
   }
@@ -72,5 +66,5 @@ export const originCheckMiddleware: RequestHandler = (req, _res, next) => {
     }
   }
 
-  next(AppError.forbidden('Origin or Referer header is required for cookie-authenticated writes'));
+  next();
 };

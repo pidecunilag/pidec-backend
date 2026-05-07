@@ -16,23 +16,6 @@ const verificationWorkflowService = getVerificationWorkflowService();
 const authRepository = new AuthRepository();
 const tokenRepository = new TokenRepository();
 
-const authCookieSameSite = env.COOKIE_SAME_SITE;
-const authCookieSecure = env.NODE_ENV === 'production' || authCookieSameSite === 'none';
-
-const buildAuthCookieOptions = (maxAge: number) => ({
-  httpOnly: true,
-  secure: authCookieSecure,
-  sameSite: authCookieSameSite,
-  maxAge,
-  path: '/',
-  ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
-});
-
-const clearAuthCookieOptions = {
-  path: '/',
-  ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
-};
-
 const resolveRefreshToken = (req: Parameters<RequestHandler>[0]) => {
   const body = req.body as { refreshToken?: unknown } | undefined;
   const bodyToken = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
@@ -51,8 +34,7 @@ const resolveRefreshToken = (req: Parameters<RequestHandler>[0]) => {
   if (bearer) {
     return bearer;
   }
-
-  return (req as unknown as { cookies?: Record<string, string> }).cookies?.['refresh-token'] ?? null;
+  return null;
 };
 
 const resolveVerificationUploadTarget = async (req: Parameters<RequestHandler>[0]) => {
@@ -137,12 +119,6 @@ export const register: RequestHandler = async (req, res, next) => {
       // Don't fail registration if email sending fails
     }
 
-    // Keep legacy cookie sessions for same-site deployments while also returning
-    // bearer tokens in JSON for simpler cross-site frontend integrations.
-    res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
-
-    res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
-
     logger.info({ userId: user.id, email: user.email }, 'User registered');
 
     res.status(201).json({
@@ -174,12 +150,6 @@ export const login: RequestHandler = async (req, res, next) => {
 
     const { user, tokens } = await authService.login(email, password);
 
-    // Keep legacy cookie sessions for same-site deployments while also returning
-    // bearer tokens in JSON for simpler cross-site frontend integrations.
-    res.cookie('access-token', tokens.accessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
-
-    res.cookie('refresh-token', tokens.refreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
-
     logger.info({ userId: user.id, email: user.email }, 'User logged in');
 
     res.status(200).json({
@@ -202,8 +172,8 @@ export const login: RequestHandler = async (req, res, next) => {
 
 /**
  * POST /auth/refresh
- * Refresh access token using the refresh token cookie.
- * No body required — uses refresh-token cookie.
+ * Refresh access token using a refresh token supplied in the body,
+ * x-refresh-token header, or Authorization bearer header.
  */
 export const refresh: RequestHandler = async (req, res, next) => {
   try {
@@ -264,10 +234,6 @@ export const refresh: RequestHandler = async (req, res, next) => {
       throw AppError.unauthenticated('Refresh token has already been rotated');
     }
 
-    // Set new access token cookie
-    res.cookie('access-token', newAccessToken, buildAuthCookieOptions(SESSION.ACCESS_TOKEN_TTL_MS));
-    res.cookie('refresh-token', newRefreshToken, buildAuthCookieOptions(SESSION.REFRESH_TOKEN_TTL_MS));
-
     logger.debug({ userId: currentUser.id }, 'Access token refreshed');
 
     res.status(200).json({
@@ -285,8 +251,7 @@ export const refresh: RequestHandler = async (req, res, next) => {
 
 /**
  * POST /auth/logout
- * Logout user by clearing auth cookies.
- * No body required.
+ * Logout user by revoking the current refresh session.
  */
 export const logout: RequestHandler = async (req, res) => {
   const refreshToken = resolveRefreshToken(req);
@@ -300,9 +265,6 @@ export const logout: RequestHandler = async (req, res) => {
       // no-op
     }
   }
-
-  res.clearCookie('access-token', clearAuthCookieOptions);
-  res.clearCookie('refresh-token', clearAuthCookieOptions);
 
   if (req.user) {
     logger.info({ userId: req.user.id }, 'User logged out');

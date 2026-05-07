@@ -37,8 +37,7 @@ const getRateLimitKey = (req: Request): string => {
   const bearer = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice('Bearer '.length)
     : null;
-  const cookieToken = req.cookies?.['access-token'] ?? null;
-  const token = bearer ?? cookieToken;
+  const token = bearer;
 
   if (token) {
     try {
@@ -58,8 +57,7 @@ const getGlobalRateLimit = (req: Request): number => {
   const bearer = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice('Bearer '.length)
     : null;
-  const cookieToken = req.cookies?.['access-token'] ?? null;
-  const token = bearer ?? cookieToken;
+  const token = bearer;
 
   if (!token) return env.RATE_LIMIT_GLOBAL_ANON_MAX;
 
