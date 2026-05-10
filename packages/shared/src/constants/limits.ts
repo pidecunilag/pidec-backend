@@ -12,7 +12,7 @@ export const INVITE_LIMITS = {
 
 export const VERIFICATION_LIMITS = {
   MAX_ATTEMPTS: 3,
-  COOLDOWN_MS: 10 * 60 * 1000,   // 10 minutes between re-uploads
+  COOLDOWN_MS: 3 * 60 * 1000,    // 3 minutes between re-uploads
   REDIS_BUFFER_TTL_S: 60,        // 60 seconds — file buffer expiry in Redis
   MAX_CONCURRENT_AI_JOBS: 10,
   ADMIN_REVIEW_SLA_HOURS: 24,

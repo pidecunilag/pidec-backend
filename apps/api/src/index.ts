@@ -1,4 +1,5 @@
 import { createApp } from './app.js';
+import { startSelfPing } from './infrastructure/keep-alive/self-ping.js';
 import { env } from './shared/config/env.js';
 import { logger } from './shared/logger/index.js';
 
@@ -9,6 +10,7 @@ const server = app.listen(env.API_PORT, env.API_HOST, () => {
     { host: env.API_HOST, port: env.API_PORT, env: env.NODE_ENV },
     `PIDEC API listening on http://${env.API_HOST}:${env.API_PORT}`,
   );
+  startSelfPing();
 });
 
 const shutdown = (signal: string) => {

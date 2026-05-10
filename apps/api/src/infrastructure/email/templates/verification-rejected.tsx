@@ -22,7 +22,7 @@ export const VerificationRejectedEmail = ({
     <Text className="mt-4 text-grey-800">
       This was attempt <strong>{attemptNumber}</strong>. You have{' '}
       <strong>{attemptsRemaining}</strong> re-upload attempt
-      {attemptsRemaining === 1 ? '' : 's'} remaining. There's a 10-minute cool-down between
+      {attemptsRemaining === 1 ? '' : 's'} remaining. There's a 3-minute cool-down between
       attempts.
     </Text>
     <Button

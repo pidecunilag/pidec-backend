@@ -11,6 +11,9 @@ const EnvSchema = z.object({
 
   API_PORT: z.coerce.number().int().positive().default(process.env.PORT ? parseInt(process.env.PORT) : 4000),
   API_HOST: z.string().min(1).default('0.0.0.0'),
+  API_PUBLIC_URL: z.string().url().optional(),
+  KEEP_ALIVE_URL: z.string().url().optional(),
+  KEEP_ALIVE_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   APP_URL: z.string().url().default('http://localhost:3000'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:3000'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
