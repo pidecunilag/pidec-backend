@@ -377,7 +377,8 @@ export const resetPassword: RequestHandler = async (req, res, next) => {
       throw AppError.validation('New password is required');
     }
 
-    const user = await authService.consumePasswordResetToken(token, password);
+    const result = await authService.consumePasswordResetToken(token, password);
+    const { user, tokens } = result;
 
     logger.info({ userId: user.id, email: user.email }, 'Password reset successful');
 
@@ -390,6 +391,8 @@ export const resetPassword: RequestHandler = async (req, res, next) => {
           name: user.name,
           role: user.role,
         },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       },
     });
   } catch (err) {

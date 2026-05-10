@@ -253,9 +253,22 @@ export class AuthService {
   }
 
   /**
+   * Create a password setup token without sending the generic reset email.
+   * Used for admin-managed onboarding flows such as judge invitations.
+   */
+  async createPasswordSetupToken(userId: string, ttlMinutes = 24 * 60): Promise<string> {
+    const { token, hash } = generateSecureToken();
+    const expiresAt = getTokenExpiryMinutes(ttlMinutes);
+
+    await this.tokenRepository.createPasswordResetToken(userId, hash, expiresAt);
+
+    return token;
+  }
+
+  /**
    * Reset password using a reset token.
    */
-  async consumePasswordResetToken(token: string, newPassword: string): Promise<DbUser> {
+  async consumePasswordResetToken(token: string, newPassword: string): Promise<AuthResult> {
     // Validate new password
     if (newPassword.length < 8) {
       throw AppError.validation('Password must be at least 8 characters');
@@ -291,7 +304,11 @@ export class AuthService {
     await this.tokenRepository.revokeActivePasswordResetTokens(resetToken.user_id);
     await this.tokenRepository.revokeAllRefreshSessionsForUser(resetToken.user_id);
 
-    return user;
+    const verifiedUser =
+      user.role === 'judge' && !user.email_verified_at ? await this.verifyEmail(user.id) : user;
+    const tokens = await this.generateTokens(verifiedUser);
+
+    return { user: verifiedUser, tokens };
   }
 
   /**

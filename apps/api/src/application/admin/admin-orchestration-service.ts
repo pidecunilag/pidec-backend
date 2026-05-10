@@ -36,6 +36,9 @@ const generateSystemMatricNumber = (): string => {
   return digits.slice(0, 9);
 };
 
+const getJudgeStageLabel = (stageScope: 'stage_1' | 'stage_2'): string =>
+  stageScope === 'stage_1' ? 'Stage 1' : 'Stage 2';
+
 const queueTeamEmailFanout = (
   members: TeamMemberSummary[],
   context: string,
@@ -131,10 +134,12 @@ export class AdminOrchestrationService {
   ): Promise<JudgeRow> {
     const edition = await platformReadService.getActiveEdition();
 
+    const normalizedEmail = payload.email.toLowerCase().trim();
+
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('*')
-      .eq('email', payload.email)
+      .eq('email', normalizedEmail)
       .is('deleted_at', null)
       .maybeSingle();
 
@@ -152,7 +157,7 @@ export class AdminOrchestrationService {
         .insert([
           {
             name: payload.name,
-            email: payload.email,
+            email: normalizedEmail,
             matric_number: generateSystemMatricNumber(),
             department: 'JUDGE',
             level: 500,
@@ -183,24 +188,38 @@ export class AdminOrchestrationService {
 
     const { data, error } = await supabase
       .from('judges')
-        .insert([
-          {
-            id: createdUser.id,
-            edition_id: edition.id,
+      .insert([
+        {
+          id: createdUser.id,
+          edition_id: edition.id,
           name: payload.name,
-          email: payload.email,
+          email: normalizedEmail,
           stage_scope: payload.stageScope,
           assigned_departments: payload.assignedDepartments,
-            created_by: adminUserId,
-            is_active: true,
-          },
-        ] as never[])
+          created_by: adminUserId,
+          is_active: true,
+        },
+      ] as never[])
       .select('*')
       .single();
 
     if (error) throw error;
 
-    fireAndForget(authService.requestPasswordReset(createdUser.email), 'judge onboarding password reset email');
+    fireAndForget(
+      authService.createPasswordSetupToken(createdUser.id).then((token) =>
+        getEmailService().sendJudgeInvite(
+          { to: createdUser.email, name: createdUser.name },
+          {
+            recipientName: createdUser.name,
+            stageLabel: getJudgeStageLabel(payload.stageScope),
+            departments: payload.assignedDepartments,
+            setupLink: `${env.APP_URL}/auth/reset-password?token=${encodeURIComponent(token)}&invite=judge`,
+            expiresIn: '24 hours',
+          },
+        ),
+      ),
+      'judge onboarding invitation email',
+    );
     return data;
   }
 

@@ -84,6 +84,14 @@ export interface PasswordResetPayload {
   resetLink: string;
 }
 
+export interface JudgeInvitePayload {
+  recipientName: string;
+  stageLabel: string;
+  departments: string[];
+  setupLink: string;
+  expiresIn: string;
+}
+
 export interface IEmailService {
   sendVerificationApproved(
     to: EmailRecipient,
@@ -117,4 +125,5 @@ export interface IEmailService {
     p: EmailVerificationPayload,
   ): Promise<EmailDispatchResult>;
   sendPasswordReset(to: EmailRecipient, p: PasswordResetPayload): Promise<EmailDispatchResult>;
+  sendJudgeInvite(to: EmailRecipient, p: JudgeInvitePayload): Promise<EmailDispatchResult>;
 }

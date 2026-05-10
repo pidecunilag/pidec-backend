@@ -4,18 +4,19 @@ import {
   Head,
   Hr,
   Html,
+  Img,
+  Link,
   Preview,
   Section,
   Tailwind,
   Text,
 } from '@react-email/components';
 import { type ReactNode } from 'react';
+import { env } from '../../../shared/config/env.js';
 
-/**
- * Shared email layout. Uses Tailwind via @react-email's bundled processor
- * so we avoid duplicating inline styles across templates. Brand colours
- * mirror the design system tokens (navy, gold, grey).
- */
+const appUrl = env.APP_URL.replace(/\/$/, '');
+const logoUrl = `${appUrl}/logos/Coloured%20Logo%20Black%20text%20Trans.png`;
+
 export interface EmailLayoutProps {
   preview: string;
   children: ReactNode;
@@ -26,31 +27,30 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
     <Head />
     <Preview>{preview}</Preview>
     <Tailwind>
-      <Body className="m-0 bg-white p-0 font-sans text-[16px] leading-[1.6] text-[#1A1A2E]">
-        <Container className="mx-auto max-w-[560px] px-6 py-10">
-          {/* Header */}
-          <Section className="mb-6">
-            <Text className="m-0 text-[20px] font-bold tracking-tight text-[#002868]">
-              PIDEC 1.0
-            </Text>
-            <Text className="m-0 text-[12px] uppercase tracking-wider text-[#555577]">
-              ULES Engineering Competition
+      <Body className="m-0 bg-[#f8f4fb] p-0 font-sans text-[16px] leading-[1.65] text-[#2b0640]">
+        <Container className="mx-auto max-w-[600px] px-6 py-10">
+          <Section className="rounded-[28px] border border-[#eadff0] bg-white px-8 py-6 shadow-sm">
+            <Img src={logoUrl} width="154" height="44" alt="PIDEC 1.0" />
+            <Text className="m-0 mt-4 text-[11px] font-bold uppercase tracking-[0.28em] text-[#ff5a00]">
+              Prototype Inter Departmental Engineering Challenge
             </Text>
           </Section>
 
-          {/* Body */}
-          <Section className="rounded-md border border-[#CCCCDD] bg-white p-8">{children}</Section>
+          <Section className="mt-5 rounded-[28px] border border-[#eadff0] bg-white p-8 shadow-sm">
+            {children}
+          </Section>
 
-          {/* Footer */}
-          <Hr className="my-8 border-[#CCCCDD]" />
+          <Hr className="my-8 border-[#eadff0]" />
           <Section>
-            <Text className="m-0 text-[12px] leading-[1.5] text-[#555577]">
-              You're receiving this because you registered for PIDEC 1.0, the Prototype
-              Inter-Departmental Engineering Challenge organised by the University of Lagos
-              Engineering Society. Questions? Reply to this email.
+            <Text className="m-0 text-[12px] leading-[1.6] text-[#7b5a8d]">
+              You're receiving this because you registered for PIDEC 1.0, the Prototype Inter
+              Departmental Engineering Challenge. Questions? Reply to this email.
             </Text>
-            <Text className="mb-0 mt-3 text-[12px] text-[#555577]">
-              © PIDEC 1.0 · ULES Competitions &amp; Technical Team
+            <Text className="mb-0 mt-3 text-[12px] text-[#7b5a8d]">
+              (c) 2026 PIDEC. Visit{' '}
+              <Link href={appUrl} className="text-[#2b0640]">
+                {appUrl}
+              </Link>
             </Text>
           </Section>
         </Container>

@@ -9,6 +9,7 @@ import type {
   EmailVerificationPayload,
   FeedbackPublishedPayload,
   IEmailService,
+  JudgeInvitePayload,
   PasswordResetPayload,
   StageAdvancedPayload,
   SubmissionConfirmedPayload,
@@ -30,6 +31,7 @@ import { TeamDisqualifiedEmail } from './templates/team-disqualified.js';
 import { TeamDissolvedEmail } from './templates/team-dissolved.js';
 import { VerificationEmail } from './templates/verification-email.js';
 import { PasswordResetEmail } from './templates/password-reset-email.js';
+import { JudgeInviteEmail } from './templates/judge-invite.js';
 
 /**
  * Resend implementation of IEmailService.
@@ -153,6 +155,10 @@ export class ResendEmailService implements IEmailService {
 
   sendPasswordReset(to: EmailRecipient, p: PasswordResetPayload) {
     return this.dispatch(to, 'Reset your PIDEC password', PasswordResetEmail(p));
+  }
+
+  sendJudgeInvite(to: EmailRecipient, p: JudgeInvitePayload) {
+    return this.dispatch(to, `PIDEC judge invitation for ${p.stageLabel}`, JudgeInviteEmail(p));
   }
 }
 
