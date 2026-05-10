@@ -2,12 +2,32 @@ import { type RequestHandler } from 'express';
 import { Stage1SubmitSchema, Stage2SubmitSchema, Stage3SubmitSchema } from '@pidec/shared';
 import { AppError } from '../../shared/errors/app-error.js';
 import { submissionApplicationService } from '../../application/submission/submission-application-service.js';
+import { submissionUploadService } from '../../application/submission/submission-upload-service.js';
 
 export const listMySubmissions: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
     const submissions = await submissionApplicationService.listMySubmissions(req.user.id);
     res.status(200).json({ status: 'success', data: { submissions } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const uploadSubmissionFile: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.user) throw AppError.unauthenticated();
+
+    const stage = Number((req.body as { stage?: string | number }).stage);
+    if (stage !== 2 && stage !== 3) {
+      throw AppError.validation('Submission uploads are only available for Stage 2 or Stage 3');
+    }
+
+    const file = (req as { file?: Express.Multer.File }).file;
+    if (!file) throw AppError.validation('Submission file is required');
+
+    const upload = await submissionUploadService.uploadFile(req.user.id, stage, file);
+    res.status(201).json({ status: 'success', data: { file: upload } });
   } catch (err) {
     next(err);
   }
