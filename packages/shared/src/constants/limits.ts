@@ -32,6 +32,7 @@ export const VERIFICATION_DOC_MIME_TYPES = [
 
 export const SUBMISSION_FILE_MIME_TYPES = [
   'application/pdf',
+  'application/msword',
   'application/zip',
   'application/x-zip-compressed',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -39,6 +40,12 @@ export const SUBMISSION_FILE_MIME_TYPES = [
   'image/png',
   'image/jpeg',
   'image/webp',
+] as const;
+
+export const STAGE_1_PROPOSAL_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ] as const;
 
 export const SESSION = {

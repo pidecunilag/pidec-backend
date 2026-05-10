@@ -70,6 +70,7 @@ export class SubmissionApplicationService {
   async submitStage1(userId: string, payload: Stage1SubmitInput): Promise<{ submission: SubmissionRow; duplicated: boolean }> {
     const { user, team, edition, existing } = await this.assertLeaderCanSubmit(userId, 1);
     if (existing) return { submission: existing, duplicated: true };
+    const files = await submissionUploadService.resolveFilesForSubmission(userId, 1, payload.fileIds);
 
     const { data: tokenRow, error: tokenError } = await supabase
       .from('tokens')
@@ -96,7 +97,7 @@ export class SubmissionApplicationService {
           submitted_by: user.id,
           stage: 1,
           form_data: payload.formData,
-          files: [],
+          files,
           token_id: tokenRecord.id,
           status: 'submitted',
           is_locked: true,
@@ -128,6 +129,7 @@ export class SubmissionApplicationService {
     ]);
 
     logger.info({ submissionId: createdSubmission.id, teamId: team.id, stage: 1 }, 'Stage 1 submission created');
+    await submissionUploadService.markConsumed(payload.fileIds);
     queueSubmissionEmails(team.id, team.name, 1, createdSubmission.submitted_at);
 
     return { submission: createdSubmission, duplicated: false };

@@ -240,30 +240,21 @@ export const swaggerDocument = {
       },
       Stage1SubmissionRequest: {
         type: 'object',
-        required: ['token', 'formData'],
+        required: ['token', 'formData', 'fileIds'],
         properties: {
           token: { type: 'string', example: 'AbC123xYz890' },
           formData: {
             type: 'object',
-            required: [
-              'problem_statement',
-              'proposed_solution',
-              'theme_alignment',
-              'feasibility',
-              'departmental_relevance',
-              'declarations',
-            ],
+            required: ['submission_type'],
             properties: {
-              problem_statement: { type: 'string' },
-              proposed_solution: { type: 'string' },
-              theme_alignment: { type: 'string' },
-              feasibility: { type: 'string' },
-              departmental_relevance: { type: 'string' },
-              declarations: {
-                type: 'object',
-                additionalProperties: { type: 'boolean', enum: [true] },
-              },
+              submission_type: { type: 'string', enum: ['document_upload'] },
             },
+          },
+          fileIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 1,
+            items: { type: 'string' },
           },
         },
       },

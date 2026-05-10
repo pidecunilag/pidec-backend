@@ -1,9 +1,4 @@
 import { z } from 'zod';
-import {
-  STAGE_1_DECLARATION_KEYS,
-  STAGE_1_WORD_LIMITS,
-  type Stage1SectionKey,
-} from '../constants/stages.js';
 import { SUBMISSION_TOKEN_REGEX } from '../constants/regex.js';
 
 /** Cheap, deterministic word count: collapse whitespace, split on space. */
@@ -13,34 +8,8 @@ export const countWords = (text: string): number => {
   return trimmed.split(/\s+/).length;
 };
 
-const wordLimitedString = (key: Stage1SectionKey) =>
-  z
-    .string()
-    .trim()
-    .min(1, 'This section is required')
-    .refine((v) => countWords(v) <= STAGE_1_WORD_LIMITS[key], {
-      message: `Section exceeds the ${STAGE_1_WORD_LIMITS[key]} word limit`,
-    });
-
-export const Stage1DeclarationSchema = z
-  .object(
-    Object.fromEntries(
-      STAGE_1_DECLARATION_KEYS.map((k) => [
-        k,
-        z.literal(true, {
-          errorMap: () => ({ message: 'You must agree to all declarations to submit' }),
-        }),
-      ]),
-    ) as Record<(typeof STAGE_1_DECLARATION_KEYS)[number], z.ZodLiteral<true>>,
-  );
-
 export const Stage1FormDataSchema = z.object({
-  problem_statement: wordLimitedString('problem_statement'),
-  proposed_solution: wordLimitedString('proposed_solution'),
-  theme_alignment: wordLimitedString('theme_alignment'),
-  feasibility: wordLimitedString('feasibility'),
-  departmental_relevance: wordLimitedString('departmental_relevance'),
-  declarations: Stage1DeclarationSchema,
+  submission_type: z.literal('document_upload').default('document_upload'),
 });
 
 export type Stage1FormData = z.infer<typeof Stage1FormDataSchema>;
@@ -52,7 +21,8 @@ export const SubmissionTokenSchema = z
 
 export const Stage1SubmitSchema = z.object({
   token: SubmissionTokenSchema,
-  formData: Stage1FormDataSchema,
+  formData: Stage1FormDataSchema.default({ submission_type: 'document_upload' }),
+  fileIds: z.array(z.string()).min(1, 'Upload your Stage 1 proposal document').max(1, 'Upload only one Stage 1 proposal document'),
 });
 
 export type Stage1SubmitInput = z.infer<typeof Stage1SubmitSchema>;

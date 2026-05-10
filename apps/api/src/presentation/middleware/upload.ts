@@ -83,6 +83,11 @@ const detectSubmissionMimeFromBuffer = (
     buffer.subarray(8, 12).equals(Buffer.from('WEBP'));
   if (isWebp) return 'image/webp';
 
+  const isLegacyWord =
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
+  if (isLegacyWord && declaredMime === 'application/msword') return declaredMime;
+
   return null;
 };
 

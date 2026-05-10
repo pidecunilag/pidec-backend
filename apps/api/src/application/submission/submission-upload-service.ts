@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { ERROR_CODES } from '@pidec/shared';
+import { ERROR_CODES, STAGE_1_PROPOSAL_MIME_TYPES } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { platformReadService } from '../shared/platform-read-service.js';
@@ -44,8 +44,12 @@ function toUploadFile(row: UploadRow): SubmissionUploadFile {
 export class SubmissionUploadService {
   private readonly supabase = getSupabaseService();
 
-  async uploadFile(userId: string, stage: 2 | 3, file: Express.Multer.File) {
+  async uploadFile(userId: string, stage: 1 | 2 | 3, file: Express.Multer.File) {
     const { team, edition } = await this.assertLeaderCanUpload(userId, stage);
+    if (stage === 1 && !STAGE_1_PROPOSAL_MIME_TYPES.includes(file.mimetype as (typeof STAGE_1_PROPOSAL_MIME_TYPES)[number])) {
+      throw new AppError(ERROR_CODES.INVALID_FILE_TYPE, 'Stage 1 proposals must be uploaded as PDF or Word documents');
+    }
+
     const filename = safeFilename(file.originalname);
     const storagePath = [
       edition.id,
@@ -90,7 +94,7 @@ export class SubmissionUploadService {
     return toUploadFile(data as UploadRow);
   }
 
-  async resolveFilesForSubmission(userId: string, stage: 2 | 3, fileIds: string[]) {
+  async resolveFilesForSubmission(userId: string, stage: 1 | 2 | 3, fileIds: string[]) {
     if (fileIds.length === 0) return [];
 
     const { team, edition } = await this.assertLeaderCanUpload(userId, stage);
@@ -136,7 +140,7 @@ export class SubmissionUploadService {
     if (error) throw error;
   }
 
-  private async assertLeaderCanUpload(userId: string, stage: 2 | 3) {
+  private async assertLeaderCanUpload(userId: string, stage: 1 | 2 | 3) {
     const user = await platformReadService.getUserById(userId);
     if (user.verification_status !== 'verified') {
       throw new AppError(ERROR_CODES.VERIFICATION_PENDING, 'Only verified students can upload submission files');

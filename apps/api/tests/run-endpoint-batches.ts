@@ -382,6 +382,15 @@ const createPublicVerificationUpload = (user: UserSeed): FormData => {
   return form;
 };
 
+const createSubmissionPdfUpload = (stage: 1 | 2 | 3): FormData => {
+  const form = new FormData();
+  const buffer = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF');
+  const blob = new Blob([buffer], { type: 'application/pdf' });
+  form.append('stage', String(stage));
+  form.append('file', blob, `stage-${stage}-proposal.pdf`);
+  return form;
+};
+
 const run = async () => {
   const editionId = await ensureActiveEdition();
   void editionId;
@@ -597,24 +606,22 @@ const run = async () => {
     'Token response was not JSON',
   );
   const submissionToken = tokenBody.data.token.token_string;
+  const stage1UploadResult = await request(leaderSession, '/api/v1/submissions/files', {
+    method: 'POST',
+    body: createSubmissionPdfUpload(1),
+  });
+  expectStatus(stage1UploadResult, 201, 'Stage 1 proposal upload failed');
+  const stage1UploadBody = expectJsonObject<{ success: true; data: { file: { id: string } } }>(
+    stage1UploadResult,
+    'Stage 1 upload response was not JSON',
+  );
 
   const stage1Result = await request(leaderSession, '/api/v1/submissions', {
     method: 'POST',
     json: {
       token: submissionToken,
-      formData: {
-        problem_statement: 'We are solving a real campus engineering problem with measurable impact.',
-        proposed_solution: 'Our team proposes a monitoring and control system designed for reliable use on campus.',
-        theme_alignment: 'The solution aligns with the current challenge theme through practical engineering value.',
-        feasibility: 'The prototype is feasible with available components, timeline, and team capability.',
-        departmental_relevance: 'It directly fits computer engineering systems thinking and implementation.',
-        declarations: {
-          original_work: true,
-          no_external_authoring: true,
-          agree_to_rules: true,
-          consent_to_publication: true,
-        },
-      },
+      formData: { submission_type: 'document_upload' },
+      fileIds: [stage1UploadBody.data.file.id],
     },
   });
   expectStatus(stage1Result, 201, 'Stage 1 submission failed');

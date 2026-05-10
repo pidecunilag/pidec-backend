@@ -19,8 +19,8 @@ export const uploadSubmissionFile: RequestHandler = async (req, res, next) => {
     if (!req.user) throw AppError.unauthenticated();
 
     const stage = Number((req.body as { stage?: string | number }).stage);
-    if (stage !== 2 && stage !== 3) {
-      throw AppError.validation('Submission uploads are only available for Stage 2 or Stage 3');
+    if (stage !== 1 && stage !== 2 && stage !== 3) {
+      throw AppError.validation('Submission uploads are only available for Stage 1, Stage 2, or Stage 3');
     }
 
     const file = (req as { file?: Express.Multer.File }).file;
