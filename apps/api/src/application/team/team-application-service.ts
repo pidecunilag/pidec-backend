@@ -183,6 +183,7 @@ export class TeamApplicationService {
       .from('team_invites')
       .select('*, teams(id,name,department), users!team_invites_invited_by_fkey(id,name,email)')
       .eq('invitee_id', userId)
+      .eq('status', 'pending')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
