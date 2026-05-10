@@ -9,7 +9,6 @@ import { hashToken } from '../../infrastructure/auth/token-utils.js';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/index.js';
-import { env } from '../../shared/config/env.js';
 
 const authService = new AuthService();
 const verificationWorkflowService = getVerificationWorkflowService();

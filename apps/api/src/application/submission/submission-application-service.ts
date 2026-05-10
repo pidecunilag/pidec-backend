@@ -17,6 +17,7 @@ import {
   type TeamRow,
   type UserRow,
 } from '../shared/platform-read-service.js';
+import { submissionUploadService } from './submission-upload-service.js';
 
 const supabase = getSupabaseService();
 
@@ -135,6 +136,7 @@ export class SubmissionApplicationService {
   async submitStage2(userId: string, payload: Stage2SubmitInput): Promise<{ submission: SubmissionRow; duplicated: boolean }> {
     const { user, team, edition, existing } = await this.assertLeaderCanSubmit(userId, 2);
     if (existing) return { submission: existing, duplicated: true };
+    const files = await submissionUploadService.resolveFilesForSubmission(userId, 2, payload.fileIds ?? []);
 
     const { data: submission, error } = await supabase
       .from('submissions')
@@ -145,7 +147,7 @@ export class SubmissionApplicationService {
           submitted_by: user.id,
           stage: 2,
           form_data: payload.formData,
-          files: (payload.fileIds ?? []).map((id) => ({ id })),
+          files,
           video_link: payload.videoLink,
           status: 'submitted',
           is_locked: true,
@@ -168,6 +170,7 @@ export class SubmissionApplicationService {
     ] as never[]);
 
     logger.info({ submissionId: createdSubmission.id, teamId: team.id, stage: 2 }, 'Stage 2 submission created');
+    await submissionUploadService.markConsumed(payload.fileIds ?? []);
     queueSubmissionEmails(team.id, team.name, 2, createdSubmission.submitted_at);
     return { submission: createdSubmission, duplicated: false };
   }
@@ -175,6 +178,7 @@ export class SubmissionApplicationService {
   async submitStage3(userId: string, payload: Stage3SubmitInput): Promise<{ submission: SubmissionRow; duplicated: boolean }> {
     const { user, team, edition, existing } = await this.assertLeaderCanSubmit(userId, 3);
     if (existing) return { submission: existing, duplicated: true };
+    const files = await submissionUploadService.resolveFilesForSubmission(userId, 3, payload.fileIds);
 
     const { data: submission, error } = await supabase
       .from('submissions')
@@ -185,7 +189,7 @@ export class SubmissionApplicationService {
           submitted_by: user.id,
           stage: 3,
           form_data: payload.formData,
-          files: (payload.fileIds ?? []).map((id) => ({ id })),
+          files,
           status: 'submitted',
           is_locked: true,
         },
@@ -207,6 +211,7 @@ export class SubmissionApplicationService {
     ] as never[]);
 
     logger.info({ submissionId: createdSubmission.id, teamId: team.id, stage: 3 }, 'Stage 3 submission created');
+    await submissionUploadService.markConsumed(payload.fileIds);
     queueSubmissionEmails(team.id, team.name, 3, createdSubmission.submitted_at);
     return { submission: createdSubmission, duplicated: false };
   }

@@ -14,7 +14,11 @@ import {
 
 type TeamDetails = {
   team: TeamRow | null;
-  members: Array<Pick<UserRow, 'id' | 'name' | 'email' | 'role' | 'verification_status'>>;
+  members: Array<
+    Pick<UserRow, 'id' | 'name' | 'email' | 'matric_number' | 'department' | 'level' | 'verification_status'> & {
+      role: 'leader' | 'member';
+    }
+  >;
 };
 
 type InviteWithRelations = TeamInviteRow & {
@@ -114,7 +118,7 @@ export class TeamApplicationService {
         supabase.from('teams').select('*').eq('id', user.team_id).is('deleted_at', null).maybeSingle(),
         supabase
           .from('users')
-          .select('id,name,email,role,verification_status')
+          .select('id,name,email,matric_number,department,level,verification_status')
           .eq('team_id', user.team_id)
           .is('deleted_at', null),
       ]);
@@ -122,9 +126,15 @@ export class TeamApplicationService {
     if (teamError) throw teamError;
     if (membersError) throw membersError;
 
+    const teamRow = team as TeamRow | null;
+    const memberRows = (members ?? []) as TeamDetails['members'];
+
     return {
-      team: team ?? null,
-      members: members ?? [],
+      team: teamRow,
+      members: memberRows.map((member) => ({
+        ...member,
+        role: teamRow?.leader_id === member.id ? 'leader' : 'member',
+      })),
     };
   }
 
@@ -133,7 +143,7 @@ export class TeamApplicationService {
 
     const { data, error } = await supabase
       .from('users')
-      .select('id,name,email,department,verification_status')
+      .select('id,name,email,matric_number,department,level,verification_status')
       .ilike('name', `%${query}%`)
       .eq('department', user.department)
       .is('team_id', null)
@@ -143,7 +153,19 @@ export class TeamApplicationService {
       .limit(20);
 
     if (error) throw error;
-    return data ?? [];
+    const students = (data ?? []) as Array<
+      Pick<UserRow, 'id' | 'name' | 'email' | 'matric_number' | 'department' | 'level' | 'verification_status'>
+    >;
+
+    return students.map((student) => ({
+      id: student.id,
+      name: student.name,
+      email: student.email,
+      matricNumber: student.matric_number,
+      department: student.department,
+      level: student.level,
+      verificationStatus: student.verification_status,
+    }));
   }
 
   async listMyInvites(userId: string): Promise<InviteWithRelations[]> {
