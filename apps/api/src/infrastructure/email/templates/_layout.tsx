@@ -31,9 +31,6 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
         <Container className="mx-auto max-w-[600px] px-6 py-10">
           <Section className="rounded-[28px] border border-[#eadff0] bg-white px-8 py-6 shadow-sm">
             <Img src={logoUrl} width="154" height="44" alt="PIDEC 1.0" />
-            <Text className="m-0 mt-4 text-[11px] font-bold uppercase tracking-[0.28em] text-[#ff5a00]">
-              Prototype Inter Departmental Engineering Challenge
-            </Text>
           </Section>
 
           <Section className="mt-5 rounded-[28px] border border-[#eadff0] bg-white p-8 shadow-sm">

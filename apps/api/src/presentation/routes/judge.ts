@@ -4,6 +4,7 @@ import { Stage1RepresentativeSelectionSchema, Stage2ScoreSchema, UuidSchema } fr
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import {
+  getSubmissionFileDownload,
   getJudgeInfo,
   listJudgeSubmissions,
   pickDepartmentRepresentative,
@@ -29,6 +30,11 @@ judgeRouter.get(
   '/submissions',
   validate(JudgeSubmissionQuerySchema, 'query'),
   listJudgeSubmissions,
+);
+judgeRouter.get(
+  '/submissions/:submissionId/files/:fileId/download',
+  validate(z.object({ submissionId: UuidSchema, fileId: z.string().min(1) }), 'params'),
+  getSubmissionFileDownload,
 );
 judgeRouter.post(
   '/stage-1/representative',

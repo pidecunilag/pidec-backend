@@ -3,9 +3,17 @@ import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { platformReadService } from '../shared/platform-read-service.js';
 
+const SUBMISSION_BUCKET = 'submissions';
+
 type SubmissionWithDepartment = Database['public']['Tables']['submissions']['Row'] & {
   teams: { id: string; department: string; name?: string | null; status?: string | null } | null;
   users?: { id: string; name: string; email: string } | null;
+};
+
+type StoredSubmissionFile = {
+  id?: string;
+  url?: string;
+  filename?: string;
 };
 
 export class JudgeApplicationService {
@@ -110,6 +118,32 @@ export class JudgeApplicationService {
     });
   }
 
+  async createSubmissionFileDownloadUrl(judgeId: string, submissionId: string, fileId: string) {
+    const judge = await platformReadService.getJudgeById(judgeId);
+    const stage = judge.stage_scope === 'stage_1' ? 1 : 2;
+    const submission = await this.getSubmissionWithDepartment(submissionId, stage);
+    const department = submission.teams?.department;
+    if (!department) throw AppError.notFound('Submission team could not be resolved');
+    if (!judge.assigned_departments.includes(department)) {
+      throw AppError.forbidden('Submission is outside judge department scope');
+    }
+
+    const files = this.getStoredFiles(submission.files);
+    const file = files.find((item) => item.id === fileId || item.url === fileId);
+    if (!file?.url) throw AppError.notFound('Submission file not found');
+
+    const { data, error } = await this.supabase.storage
+      .from(SUBMISSION_BUCKET)
+      .createSignedUrl(file.url, 300, { download: file.filename ?? 'submission-file' });
+
+    if (error) throw error;
+    return {
+      url: data.signedUrl,
+      filename: file.filename ?? 'submission-file',
+      expiresInSeconds: 300,
+    };
+  }
+
   private async getSubmissionWithDepartment(
     submissionId: string,
     stage: 1 | 2,
@@ -127,6 +161,14 @@ export class JudgeApplicationService {
       throw AppError.notFound(`Stage ${stage} submission not found`);
     }
     return data as SubmissionWithDepartment;
+  }
+
+  private getStoredFiles(files: unknown): StoredSubmissionFile[] {
+    if (!Array.isArray(files)) return [];
+    return files.filter((file): file is StoredSubmissionFile => {
+      if (!file || typeof file !== 'object') return false;
+      return 'url' in file || 'id' in file;
+    });
   }
 
   private async upsertJudgeScore(

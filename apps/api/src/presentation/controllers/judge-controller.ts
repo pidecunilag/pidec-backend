@@ -23,6 +23,21 @@ export const listJudgeSubmissions: RequestHandler = async (req, res, next) => {
   }
 };
 
+export const getSubmissionFileDownload: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.user) throw AppError.unauthenticated();
+    const { submissionId, fileId } = req.params as { submissionId: string; fileId: string };
+    const download = await judgeApplicationService.createSubmissionFileDownloadUrl(
+      req.user.id,
+      submissionId,
+      fileId,
+    );
+    res.status(200).json({ status: 'success', data: { download } });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const pickStage1Representative: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();
