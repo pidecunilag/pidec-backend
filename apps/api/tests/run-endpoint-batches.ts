@@ -58,6 +58,8 @@ type RequestOptions = {
 type Session = {
   label: string;
   cookies: Map<string, string>;
+  accessToken?: string;
+  refreshToken?: string;
 };
 
 type UserSeed = {
@@ -132,6 +134,9 @@ const request = async (
   if (session) {
     const cookie = cookieHeader(session);
     if (cookie) headers.set('cookie', cookie);
+    if (session.accessToken && !headers.has('authorization')) {
+      headers.set('authorization', `Bearer ${session.accessToken}`);
+    }
   }
 
   let body = options.body;
@@ -203,6 +208,17 @@ const expectStatus = (result: HttpResult, expected: number, message: string) => 
 const expectJsonObject = <T extends JsonRecord>(result: HttpResult, message: string): T => {
   assert.ok(result.json && !Array.isArray(result.json) && typeof result.json === 'object', `${message}\nBody: ${result.text}`);
   return result.json as T;
+};
+
+const persistAuthTokens = (session: Session, result: HttpResult, message: string) => {
+  const body = expectJsonObject<{
+    success: true;
+    data: { accessToken?: string; refreshToken?: string };
+  }>(result, message);
+  assert.equal(typeof body.data.accessToken, 'string', `${message}: access token missing`);
+  assert.equal(typeof body.data.refreshToken, 'string', `${message}: refresh token missing`);
+  session.accessToken = body.data.accessToken;
+  session.refreshToken = body.data.refreshToken;
 };
 
 const makeMatricNumber = (offset: number): string => {
@@ -322,6 +338,7 @@ const login = async (session: Session, email: string, password: string) => {
     json: { email, password },
   });
   expectStatus(result, 200, `Login failed for ${email}`);
+  persistAuthTokens(session, result, `Login token response invalid for ${email}`);
 };
 
 const registerStudent = async (session: Session, user: UserSeed) => {
@@ -334,6 +351,7 @@ const registerStudent = async (session: Session, user: UserSeed) => {
     return;
   }
   expectStatus(result, 201, `Registration failed for ${user.email}`);
+  persistAuthTokens(session, result, `Registration token response invalid for ${user.email}`);
 };
 
 const markUserVerified = async (adminSession: Session, userId: string) => {
@@ -489,8 +507,22 @@ const run = async () => {
   expectStatus(resetResult, 200, 'Password reset endpoint failed');
 
   await login(authOnlySession, authOnly.email, 'Studentpass456');
-  expectStatus(await requestWithTransientRetry(authOnlySession, '/api/v1/auth/refresh', { method: 'POST' }), 200, 'Refresh endpoint failed');
-  expectStatus(await requestWithTransientRetry(authOnlySession, '/api/v1/auth/logout', { method: 'POST' }), 200, 'Logout failed');
+  const refreshResult = await requestWithTransientRetry(authOnlySession, '/api/v1/auth/refresh', {
+    method: 'POST',
+    json: { refreshToken: authOnlySession.refreshToken },
+  });
+  expectStatus(refreshResult, 200, 'Refresh endpoint failed');
+  persistAuthTokens(authOnlySession, refreshResult, 'Refresh token response invalid');
+  expectStatus(
+    await requestWithTransientRetry(authOnlySession, '/api/v1/auth/logout', {
+      method: 'POST',
+      json: { refreshToken: authOnlySession.refreshToken },
+    }),
+    200,
+    'Logout failed',
+  );
+  authOnlySession.accessToken = undefined;
+  authOnlySession.refreshToken = undefined;
   expectStatus(await request(authOnlySession, '/api/v1/auth/me'), 401, 'Logged-out session should not resolve /auth/me');
 
   const verificationUploadResult = await request(null, '/api/v1/auth/verification-document', {
@@ -684,6 +716,16 @@ const run = async () => {
     'Setting active stage 2 failed',
   );
 
+  const stage2UploadResult = await request(leaderSession, '/api/v1/submissions/files', {
+    method: 'POST',
+    body: createSubmissionPdfUpload(2),
+  });
+  expectStatus(stage2UploadResult, 201, 'Stage 2 documentation upload failed');
+  const stage2UploadBody = expectJsonObject<{ success: true; data: { file: { id: string } } }>(
+    stage2UploadResult,
+    'Stage 2 upload response was not JSON',
+  );
+
   const stage2Result = await request(leaderSession, '/api/v1/submissions', {
     method: 'POST',
     json: {
@@ -694,7 +736,7 @@ const run = async () => {
         constraints_addressed: 'Power, durability, maintenance, and operator ease-of-use were addressed.',
         testing_results: 'Bench testing and controlled scenario testing showed stable operation.',
       },
-      fileIds: ['stage2-doc-1'],
+      fileIds: [stage2UploadBody.data.file.id],
     },
   });
   expectStatus(stage2Result, 201, 'Stage 2 submission failed');
@@ -722,6 +764,16 @@ const run = async () => {
     'Setting active stage 3 failed',
   );
 
+  const stage3UploadResult = await request(leaderSession, '/api/v1/submissions/files', {
+    method: 'POST',
+    body: createSubmissionPdfUpload(3),
+  });
+  expectStatus(stage3UploadResult, 201, 'Stage 3 documentation upload failed');
+  const stage3UploadBody = expectJsonObject<{ success: true; data: { file: { id: string } } }>(
+    stage3UploadResult,
+    'Stage 3 upload response was not JSON',
+  );
+
   expectStatus(
     await request(leaderSession, '/api/v1/submissions', {
       method: 'POST',
@@ -730,7 +782,7 @@ const run = async () => {
           final_documentation_summary: 'The final package includes the refined build, operation notes, and deployment summary.',
           team_ready: true,
         },
-        fileIds: ['stage3-doc-1'],
+        fileIds: [stage3UploadBody.data.file.id],
       },
     }),
     201,
@@ -978,6 +1030,14 @@ const run = async () => {
 
   const judge1Submissions = await request(judge1Session, '/api/v1/judge/submissions?stage=1');
   expectStatus(judge1Submissions, 200, 'Judge 1 submission list failed');
+  expectStatus(
+    await request(
+      judge1Session,
+      `/api/v1/judge/submissions/${stage1SubmissionId}/files/${encodeURIComponent(stage1UploadBody.data.file.id)}/download`,
+    ),
+    200,
+    'Judge 1 submission file download failed',
+  );
   expectStatus(
     await request(judge1Session, `/api/v1/judge/selections/${encodeURIComponent(department)}`, {
       method: 'POST',
