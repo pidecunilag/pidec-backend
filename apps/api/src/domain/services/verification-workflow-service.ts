@@ -1,14 +1,24 @@
-import { ERROR_CODES, FILE_LIMITS, VERIFICATION_DOC_MIME_TYPES, VERIFICATION_LIMITS } from '@pidec/shared';
+import {
+  ERROR_CODES,
+  FILE_LIMITS,
+  VERIFICATION_DOC_MIME_TYPES,
+  VERIFICATION_LIMITS,
+} from '@pidec/shared';
 import { AuthRepository } from '../repositories/auth-repository.js';
 import { getVerificationBufferStore } from '../../infrastructure/verification/buffer-store.js';
 import {
   type VerificationJobPayload,
   getVerificationQueue,
 } from '../../infrastructure/verification/queue.js';
+import {
+  type VerificationFinalizationJobPayload,
+  getVerificationFinalizationQueue,
+} from '../../infrastructure/verification/finalization-queue.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { logger } from '../../shared/logger/index.js';
 import { env } from '../../shared/config/env.js';
+import type { DbUser } from '@pidec/db-types';
 
 export interface VerificationStatusView {
   status: 'pending' | 'verified' | 'rejected' | 'flagged' | 'suspended';
@@ -30,10 +40,14 @@ export class VerificationWorkflowService {
   private readonly authRepository = new AuthRepository();
   private readonly bufferStore = getVerificationBufferStore();
   private readonly queue = getVerificationQueue();
+  private readonly finalizationQueue = getVerificationFinalizationQueue();
 
   constructor() {
     this.queue.registerProcessor(async (payload) => {
       await this.processJob(payload);
+    });
+    this.finalizationQueue.registerProcessor(async (payload) => {
+      await this.processFinalizationJob(payload);
     });
   }
 
@@ -88,12 +102,22 @@ export class VerificationWorkflowService {
       throw AppError.forbidden('Only student accounts can submit verification documents');
     }
 
-    if (!VERIFICATION_DOC_MIME_TYPES.includes(file.mimetype as (typeof VERIFICATION_DOC_MIME_TYPES)[number])) {
-      throw new AppError(ERROR_CODES.INVALID_FILE_TYPE, 'Only PDF, PNG, and JPG documents are allowed');
+    if (
+      !VERIFICATION_DOC_MIME_TYPES.includes(
+        file.mimetype as (typeof VERIFICATION_DOC_MIME_TYPES)[number],
+      )
+    ) {
+      throw new AppError(
+        ERROR_CODES.INVALID_FILE_TYPE,
+        'Only PDF, PNG, and JPG documents are allowed',
+      );
     }
 
     if (file.size > FILE_LIMITS.VERIFICATION_DOC_MAX_BYTES) {
-      throw new AppError(ERROR_CODES.FILE_TOO_LARGE, 'Verification document must be 5MB or smaller');
+      throw new AppError(
+        ERROR_CODES.FILE_TOO_LARGE,
+        'Verification document must be 5MB or smaller',
+      );
     }
 
     const attempts = user.verification_attempts ?? 0;
@@ -148,24 +172,48 @@ export class VerificationWorkflowService {
     return name.replace(/\s+/g, '').toLowerCase();
   }
 
-  private isMatch(extractedValue: string | null, userValue: string | null, isName = false): boolean {
+  private isMatch(
+    extractedValue: string | null,
+    userValue: string | null,
+    isName = false,
+  ): boolean {
     if (!extractedValue || !userValue) return false;
-    
+
     if (isName) {
       // Basic fuzzy match for name (check if all parts of user name are in extracted name)
       const parts = userValue.toLowerCase().split(/\s+/);
       const ext = extractedValue.toLowerCase();
-      return parts.every(p => ext.includes(p));
+      return parts.every((p) => ext.includes(p));
     }
-    
+
     return this.normalizeMatric(extractedValue) === this.normalizeMatric(userValue);
   }
 
-  private async verifyDocument(payload: VerificationJobPayload, user: { name: string, matric_number: string }): Promise<VerificationOutcome> {
+  private buildExtractionPrompt(finalPass: boolean): string | undefined {
+    if (!finalPass) return undefined;
+
+    return `You are doing a final student identity extraction pass for an exam docket or course registration form.
+Inspect the document carefully, including small text, headers, tables, and repeated student-info sections.
+Extract only values visible in the document. Do not infer or invent missing values.
+Return ONLY a JSON object with this exact structure:
+{
+  "name": "extracted full student name or null",
+  "matricNumber": "extracted matric number or null",
+  "department": "extracted department or null",
+  "confidence": "high" or "low"
+}
+Set confidence to "low" if the document is blurry, cropped, not a valid student document, or the name/matric number cannot be read clearly.`;
+  }
+
+  private async verifyDocument(
+    payload: VerificationJobPayload,
+    user: { name: string; matric_number: string },
+    options: { finalPass?: boolean } = {},
+  ): Promise<VerificationOutcome> {
     const hasGroq = Boolean(process.env.GROQ_API_KEY);
     const hasGemini = Boolean(process.env.GEMINI_API_KEY);
 
-    const buffer = await this.bufferStore.take(payload.bufferKey);
+    const buffer = await this.bufferStore.get(payload.bufferKey);
     if (!buffer) {
       return {
         status: 'flagged',
@@ -182,16 +230,18 @@ export class VerificationWorkflowService {
       };
     }
 
-    const { extractWithGroq, extractWithGemini } = await import('../../infrastructure/verification/ai-extractor.js');
+    const { extractWithGroq, extractWithGemini } =
+      await import('../../infrastructure/verification/ai-extractor.js');
+    const prompt = this.buildExtractionPrompt(options.finalPass ?? false);
 
-    let result = await extractWithGroq(buffer, payload.mimeType);
+    let result = await extractWithGroq(buffer, payload.mimeType, prompt);
     let method: 'groq' | 'gemini' | 'manual' = 'groq';
 
     if (!result || result.confidence === 'low') {
-      const geminiResult = await extractWithGemini(buffer, payload.mimeType);
+      const geminiResult = await extractWithGemini(buffer, payload.mimeType, prompt);
       if (geminiResult) {
-         result = geminiResult;
-         method = 'gemini';
+        result = geminiResult;
+        method = 'gemini';
       }
     }
 
@@ -204,7 +254,7 @@ export class VerificationWorkflowService {
     }
 
     if (result.confidence === 'low') {
-       return {
+      return {
         status: 'flagged',
         method,
         reason: 'Automated extraction produced low-confidence results; admin review required.',
@@ -215,10 +265,10 @@ export class VerificationWorkflowService {
     const matricMatch = this.isMatch(result.matricNumber, user.matric_number, false);
 
     if (nameMatch && matricMatch) {
-       return {
-         status: 'verified',
-         method,
-       };
+      return {
+        status: 'verified',
+        method,
+      };
     }
 
     return {
@@ -228,11 +278,7 @@ export class VerificationWorkflowService {
     };
   }
 
-  private async processJob(payload: VerificationJobPayload): Promise<void> {
-    const user = await this.authRepository.findById(payload.userId);
-    if (!user) return;
-
-    const result = await this.verifyDocument(payload, user);
+  private async completeVerification(user: DbUser, result: VerificationOutcome): Promise<void> {
     const now = new Date().toISOString();
 
     await this.authRepository.updateVerificationState(user.id, {
@@ -281,6 +327,63 @@ export class VerificationWorkflowService {
       { userId: user.id, method: result.method, reason: result.reason },
       'Verification job completed with flagged result',
     );
+  }
+
+  private async processJob(payload: VerificationJobPayload): Promise<void> {
+    const user = await this.authRepository.findById(payload.userId);
+    if (!user) return;
+
+    const result = await this.verifyDocument(payload, user);
+
+    if (result.status === 'flagged') {
+      const finalizationPayload: VerificationFinalizationJobPayload = {
+        ...payload,
+        firstMethod: result.method,
+      };
+      if (result.reason) finalizationPayload.firstReason = result.reason;
+
+      await this.finalizationQueue.enqueue(finalizationPayload);
+      logger.info(
+        { userId: user.id, method: result.method, reason: result.reason },
+        'Verification first pass was inconclusive; queued silent finalization pass',
+      );
+      return;
+    }
+
+    await this.completeVerification(user, result);
+    await this.bufferStore.delete(payload.bufferKey);
+  }
+
+  private async processFinalizationJob(payload: VerificationFinalizationJobPayload): Promise<void> {
+    try {
+      const user = await this.authRepository.findById(payload.userId);
+      if (!user) return;
+
+      if (user.verification_status !== 'pending') {
+        logger.info(
+          { userId: user.id, status: user.verification_status },
+          'Skipping verification finalization because user status already changed',
+        );
+        return;
+      }
+
+      const result = await this.verifyDocument(payload, user, { finalPass: true });
+      await this.completeVerification(user, result);
+
+      logger.info(
+        {
+          userId: user.id,
+          firstMethod: payload.firstMethod,
+          finalMethod: result.method,
+          finalStatus: result.status,
+          firstReason: payload.firstReason,
+          finalReason: result.reason,
+        },
+        'Verification finalization pass completed',
+      );
+    } finally {
+      await this.bufferStore.delete(payload.bufferKey);
+    }
   }
 }
 
