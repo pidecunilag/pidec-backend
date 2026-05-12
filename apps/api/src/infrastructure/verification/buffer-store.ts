@@ -26,7 +26,10 @@ export class VerificationBufferStore {
           lazyConnect: true,
         });
         this.redis.on('error', (err) => {
-          logger.warn({ err }, 'Verification buffer store Redis error; falling back to memory store');
+          logger.warn(
+            { err },
+            'Verification buffer store Redis error; falling back to memory store',
+          );
         });
       } catch (err) {
         logger.warn({ err }, 'Failed to initialize Redis buffer store; using memory fallback');
@@ -70,21 +73,37 @@ export class VerificationBufferStore {
     await this.setMemory(key, value, ttlSeconds);
   }
 
-  async take(key: string): Promise<Buffer | null> {
+  async get(key: string): Promise<Buffer | null> {
     if (this.redis) {
       try {
         if (this.redis.status === 'wait') await this.redis.connect();
         const value = await this.redis.get(key);
         if (!value) return null;
-        await this.redis.del(key);
         return Buffer.from(value, 'base64');
       } catch (err) {
-        logger.warn({ err }, 'Redis take failed for verification buffer; using memory fallback');
+        logger.warn({ err }, 'Redis get failed for verification buffer; using memory fallback');
       }
     }
 
-    const value = await this.getMemory(key);
+    return this.getMemory(key);
+  }
+
+  async delete(key: string): Promise<void> {
+    if (this.redis) {
+      try {
+        if (this.redis.status === 'wait') await this.redis.connect();
+        await this.redis.del(key);
+      } catch (err) {
+        logger.warn({ err }, 'Redis delete failed for verification buffer; using memory fallback');
+      }
+    }
+
     this.memory.delete(key);
+  }
+
+  async take(key: string): Promise<Buffer | null> {
+    const value = await this.get(key);
+    await this.delete(key);
     return value;
   }
 }
