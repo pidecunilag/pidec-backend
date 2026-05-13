@@ -25,51 +25,12 @@ Set confidence to "low" if the image is blurry, details are unreadable, or you a
 const GROQ_VISION_MODEL =
   process.env.GROQ_VISION_MODEL ?? 'meta-llama/llama-4-scout-17b-16e-instruct';
 
-const GROQ_BASE64_IMAGE_LIMIT_BYTES = 4 * 1024 * 1024;
-
-function parseExtractionJson(content: string): ExtractionResult | null {
-  const trimmed = content.trim();
-  const withoutFence = trimmed
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-  const start = withoutFence.indexOf('{');
-  const end = withoutFence.lastIndexOf('}');
-  const json = start >= 0 && end > start ? withoutFence.slice(start, end + 1) : withoutFence;
-  const parsed = JSON.parse(json) as Partial<ExtractionResult>;
-
-  return {
-    name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : null,
-    matricNumber:
-      typeof parsed.matricNumber === 'string' && parsed.matricNumber.trim()
-        ? parsed.matricNumber.trim()
-        : null,
-    department:
-      typeof parsed.department === 'string' && parsed.department.trim()
-        ? parsed.department.trim()
-        : null,
-    confidence: parsed.confidence === 'low' ? 'low' : 'high',
-  };
-}
-
-export async function extractWithGroq(
-  buffer: Buffer,
-  mimeType: string,
-  prompt = SYSTEM_PROMPT,
-): Promise<ExtractionResult | null> {
+export async function extractWithGroq(buffer: Buffer, mimeType: string): Promise<ExtractionResult | null> {
   try {
     if (!process.env.GROQ_API_KEY) return null;
-
-    const base64Image = buffer.toString('base64');
-    if (base64Image.length > GROQ_BASE64_IMAGE_LIMIT_BYTES) {
-      logger.warn(
-        { mimeType, size: buffer.length },
-        'Skipping Groq extraction because base64 payload exceeds the vision request limit',
-      );
-      return null;
-    }
-
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    
+    const base64Image = buffer.toString('base64');
     const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
     const response = await groq.chat.completions.create({
@@ -78,7 +39,7 @@ export async function extractWithGroq(
         {
           role: 'user',
           content: [
-            { type: 'text', text: prompt },
+            { type: 'text', text: SYSTEM_PROMPT },
             { type: 'image_url', image_url: { url: dataUrl } },
           ],
         },
@@ -90,41 +51,52 @@ export async function extractWithGroq(
     const content = response.choices[0]?.message?.content;
     if (!content) return null;
 
-    return parseExtractionJson(content);
+    const parsed = JSON.parse(content);
+    return {
+      name: parsed.name || null,
+      matricNumber: parsed.matricNumber || null,
+      department: parsed.department || null,
+      confidence: parsed.confidence === 'low' ? 'low' : 'high',
+    };
   } catch (err) {
     logger.error({ err }, 'Groq extraction failed');
     return null;
   }
 }
 
-export async function extractWithGemini(
-  buffer: Buffer,
-  mimeType: string,
-  prompt = SYSTEM_PROMPT,
-): Promise<ExtractionResult | null> {
+export async function extractWithGemini(buffer: Buffer, mimeType: string): Promise<ExtractionResult | null> {
   try {
     if (!process.env.GEMINI_API_KEY) return null;
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
+    
     const base64Image = buffer.toString('base64');
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }, { inlineData: { data: base64Image, mimeType } }],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-      },
+        model: 'gemini-2.5-flash',
+        contents: [
+            {
+                role: 'user',
+                parts: [
+                    { text: SYSTEM_PROMPT },
+                    { inlineData: { data: base64Image, mimeType } }
+                ]
+            }
+        ],
+        config: {
+            responseMimeType: 'application/json',
+        }
     });
 
     const content = response.text;
     if (!content) return null;
 
-    return parseExtractionJson(content);
+    const parsed = JSON.parse(content);
+    return {
+      name: parsed.name || null,
+      matricNumber: parsed.matricNumber || null,
+      department: parsed.department || null,
+      confidence: parsed.confidence === 'low' ? 'low' : 'high',
+    };
   } catch (err) {
     logger.error({ err }, 'Gemini extraction failed');
     return null;
