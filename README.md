@@ -53,7 +53,7 @@ Create an `.env` file in `apps/api` (refer to `.env.example` if available) and a
 PORT=3001
 NODE_ENV=development
 WEB_URL=http://localhost:3000
-CORS_ORIGIN=http://localhost:3000
+CORS_ORIGIN=*
 
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url

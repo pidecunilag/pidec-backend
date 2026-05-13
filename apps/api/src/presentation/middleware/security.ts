@@ -2,7 +2,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { type RequestHandler } from 'express';
 import { env, isProd } from '../../shared/config/env.js';
-import { AppError } from '../../shared/errors/app-error.js';
 
 /** Helmet config — strict in production, slightly relaxed in dev. */
 export const securityHeaders: RequestHandler = helmet({
@@ -21,50 +20,15 @@ export const securityHeaders: RequestHandler = helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 });
 
-/** CORS — only the configured origin is allowed (master spec security §). */
+/** CORS — allow every browser origin. Auth still relies on bearer tokens, not cookies. */
 export const corsMiddleware: RequestHandler = cors({
-  origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()),
+  origin: true,
   credentials: false,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-refresh-token'],
   maxAge: 86_400,
 });
 
-const allowedOrigins = new Set(env.CORS_ORIGIN.split(',').map((origin) => origin.trim()));
-const stateChangingMethods = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
-const allowedHosts = new Set([...allowedOrigins].map((origin) => new URL(origin).host));
-
-export const originCheckMiddleware: RequestHandler = (req, _res, next) => {
-  if (!stateChangingMethods.has(req.method)) {
-    next();
-    return;
-  }
-
-  const origin = req.headers.origin;
-  const referer = req.headers.referer;
-
-  if (origin) {
-    if (!allowedOrigins.has(origin)) {
-      next(AppError.forbidden('Origin is not allowed for this action'));
-      return;
-    }
-
-    next();
-    return;
-  }
-
-  if (referer) {
-    try {
-      const refererHost = new URL(referer).host;
-      if (allowedHosts.has(refererHost)) {
-        next();
-        return;
-      }
-    } catch {
-      next(AppError.forbidden('Referer is invalid for this action'));
-      return;
-    }
-  }
-
+export const originCheckMiddleware: RequestHandler = (_req, _res, next) => {
   next();
 };

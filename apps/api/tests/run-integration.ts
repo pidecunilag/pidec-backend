@@ -77,19 +77,20 @@ const run = async () => {
   assert.equal(healthBody.data.status, 'ok');
   assert.equal(healthBody.data.service, 'pidec-api');
 
-  const forbiddenOriginResponse = await request('/api/v1/auth/login', {
+  const crossOriginResponse = await request('/api/v1/auth/login', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       origin: 'http://evil.example.com',
     },
     body: JSON.stringify({
-      email: 'student@example.com',
-      password: 'password1',
+      email: 'not-an-email',
+      password: '',
     }),
   });
-  assert.equal(forbiddenOriginResponse.statusCode, 403);
-  assert.ok(forbiddenOriginResponse.body.length > 0);
+  assert.equal(crossOriginResponse.statusCode, 400);
+  assert.equal(crossOriginResponse.headers['access-control-allow-origin'], 'http://evil.example.com');
+  assert.ok(crossOriginResponse.body.length > 0);
 
   const unauthenticatedResponse = await request('/api/v1/users/me');
   assert.equal(unauthenticatedResponse.statusCode, 401);
