@@ -28,7 +28,30 @@ type SubmitContext = {
   existing: SubmissionRow | null;
 };
 
+const submissionEmailDateFormatter = new Intl.DateTimeFormat('en-NG', {
+  timeZone: 'Africa/Lagos',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+  timeZoneName: 'short',
+});
+
+const formatSubmissionEmailDate = (submittedAt: string) => {
+  const date = new Date(submittedAt);
+  if (Number.isNaN(date.getTime())) return submittedAt;
+
+  return submissionEmailDateFormatter
+    .format(date)
+    .replace(/\bam\b/i, 'AM')
+    .replace(/\bpm\b/i, 'PM');
+};
+
 const queueSubmissionEmails = (teamId: string, teamName: string, stage: 1 | 2 | 3, submittedAt: string) => {
+  const formattedSubmittedAt = formatSubmissionEmailDate(submittedAt);
+
   fireAndForget(
     (async () => {
       const members = await platformReadService.listTeamMembers(teamId);
@@ -40,7 +63,7 @@ const queueSubmissionEmails = (teamId: string, teamName: string, stage: 1 | 2 | 
               recipientName: member.name,
               teamName,
               stage,
-              submittedAt,
+              submittedAt: formattedSubmittedAt,
               dashboardUrl: `${env.APP_URL}/dashboard`,
             },
           ),
