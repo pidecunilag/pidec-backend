@@ -133,6 +133,21 @@ export const AdminVerificationQueueQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
+export const AdminAnalyticsQuerySchema = z
+  .object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    department: z.enum(DEPARTMENTS).optional(),
+    stage: z.coerce.number().int().min(1).max(3).optional(),
+  })
+  .refine(
+    (value) => !value.startDate || !value.endDate || value.startDate <= value.endDate,
+    {
+      message: 'startDate cannot be after endDate',
+      path: ['startDate'],
+    },
+  );
+
 export const Stage2CheckpointSchema = z.object({
   id: UuidSchema,
   editionId: UuidSchema,

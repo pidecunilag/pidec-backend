@@ -1,4 +1,5 @@
 import { type RequestHandler } from 'express';
+import { DEPARTMENTS } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
@@ -52,6 +53,174 @@ const getCursorPage = <T extends { created_at?: string | null; submitted_at?: st
       nextCursor,
     },
   };
+};
+
+type AnalyticsQuery = {
+  startDate?: string;
+  endDate?: string;
+  department?: string;
+  stage?: number;
+};
+
+type CountDatum = {
+  label: string;
+  value: number;
+};
+
+type TrendDatum = {
+  date: string;
+  registrations?: number;
+  submissions?: number;
+};
+
+const VERIFICATION_STATUSES = ['pending', 'verified', 'flagged', 'rejected', 'suspended'] as const;
+const VERIFICATION_METHODS = ['groq', 'gemini', 'manual'] as const;
+const TEAM_STATUSES = ['active', 'under_review', 'disqualified'] as const;
+const SUBMISSION_STATUSES = ['submitted', 'under_review', 'feedback_published'] as const;
+const STAGES = [1, 2, 3] as const;
+const ANALYTICS_PAGE_SIZE = 1000;
+const ANALYTICS_MAX_TREND_ROWS = 10000;
+
+const getDateBoundaries = (query: AnalyticsQuery) => ({
+  start: query.startDate ? `${query.startDate}T00:00:00.000Z` : undefined,
+  end: query.endDate ? `${query.endDate}T23:59:59.999Z` : undefined,
+});
+
+const applyAnalyticsDateRange = (query: any, column: string, filters: AnalyticsQuery) => {
+  const { start, end } = getDateBoundaries(filters);
+  let nextQuery = query;
+  if (start) nextQuery = nextQuery.gte(column, start);
+  if (end) nextQuery = nextQuery.lte(column, end);
+  return nextQuery;
+};
+
+const readCount = async (query: any): Promise<number> => {
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+};
+
+const getUsersCount = async (supabase: any, filters: AnalyticsQuery, extra: Record<string, unknown> = {}) => {
+  let query = supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'student')
+    .is('deleted_at', null);
+
+  if (filters.department) query = query.eq('department', filters.department);
+  for (const [key, value] of Object.entries(extra)) {
+    if (value === null) {
+      query = query.is(key, null);
+    } else if (Array.isArray(value)) {
+      query = query.in(key, value);
+    } else {
+      query = query.eq(key, value);
+    }
+  }
+
+  return readCount(applyAnalyticsDateRange(query, 'created_at', filters));
+};
+
+const getUsersWithTeamCount = async (supabase: any, filters: AnalyticsQuery) => {
+  let query = supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'student')
+    .not('team_id', 'is', null)
+    .is('deleted_at', null);
+
+  if (filters.department) query = query.eq('department', filters.department);
+  return readCount(applyAnalyticsDateRange(query, 'created_at', filters));
+};
+
+const getTeamsCount = async (supabase: any, editionId: string, filters: AnalyticsQuery, extra: Record<string, unknown> = {}) => {
+  let query = supabase
+    .from('teams')
+    .select('id', { count: 'exact', head: true })
+    .eq('edition_id', editionId)
+    .is('deleted_at', null);
+
+  if (filters.department) query = query.eq('department', filters.department);
+  for (const [key, value] of Object.entries(extra)) {
+    query = query.eq(key, value);
+  }
+
+  return readCount(applyAnalyticsDateRange(query, 'created_at', filters));
+};
+
+const getSubmissionsCount = async (
+  supabase: any,
+  editionId: string,
+  filters: AnalyticsQuery,
+  extra: Record<string, unknown> = {},
+) => {
+  let query = supabase
+    .from('submissions')
+    .select(filters.department ? 'id,teams!inner(department)' : 'id', { count: 'exact', head: true })
+    .eq('edition_id', editionId)
+    .is('deleted_at', null);
+
+  if (filters.department) query = query.eq('teams.department', filters.department);
+  if (filters.stage) query = query.eq('stage', filters.stage);
+  for (const [key, value] of Object.entries(extra)) {
+    query = query.eq(key, value);
+  }
+
+  return readCount(applyAnalyticsDateRange(query, 'submitted_at', filters));
+};
+
+const getSubmissionsByDepartmentCount = async (
+  supabase: any,
+  editionId: string,
+  filters: AnalyticsQuery,
+  department: string,
+) => {
+  let query = supabase
+    .from('submissions')
+    .select('id,teams!inner(department)', { count: 'exact', head: true })
+    .eq('edition_id', editionId)
+    .eq('teams.department', department)
+    .is('deleted_at', null);
+
+  if (filters.stage) query = query.eq('stage', filters.stage);
+
+  return readCount(applyAnalyticsDateRange(query, 'submitted_at', filters));
+};
+
+const fetchAnalyticsRows = async <T>(
+  buildQuery: (offset: number, limit: number) => any,
+  maxRows = ANALYTICS_MAX_TREND_ROWS,
+): Promise<T[]> => {
+  const rows: T[] = [];
+  let offset = 0;
+
+  while (rows.length < maxRows) {
+    const limit = Math.min(ANALYTICS_PAGE_SIZE, maxRows - rows.length);
+    const { data, error } = await buildQuery(offset, limit);
+    if (error) throw error;
+
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < limit) break;
+    offset += limit;
+  }
+
+  return rows;
+};
+
+const incrementByDate = (map: Map<string, number>, value?: string | null) => {
+  if (!value) return;
+  const date = value.slice(0, 10);
+  map.set(date, (map.get(date) ?? 0) + 1);
+};
+
+const mergeTrendMaps = (registrations: Map<string, number>, submissions: Map<string, number>): TrendDatum[] => {
+  const dates = Array.from(new Set([...registrations.keys(), ...submissions.keys()])).sort();
+  return dates.map((date) => ({
+    date,
+    registrations: registrations.get(date) ?? 0,
+    submissions: submissions.get(date) ?? 0,
+  }));
 };
 
 export const listUsers: RequestHandler = async (req, res, next) => {
@@ -639,6 +808,241 @@ export const deleteStage2Checkpoint: RequestHandler = async (req, res, next) => 
     }
 
     res.status(200).json({ status: 'success', data: { checkpoint: data } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAnalytics: RequestHandler = async (req, res, next) => {
+  try {
+    const filters = req.query as AnalyticsQuery;
+    const supabase = getSupabaseService() as any;
+    const edition = await getActiveEdition();
+    const selectedStage = filters.stage ?? (edition.active_stage && edition.active_stage > 0 ? edition.active_stage : 1);
+
+    const [
+      totalRegistrations,
+      verifiedStudents,
+      flaggedStudents,
+      studentsWithTeam,
+      studentsWithoutTeam,
+      totalTeams,
+      activeTeams,
+      totalSubmissions,
+      activeJudges,
+    ] = await Promise.all([
+      getUsersCount(supabase, filters),
+      getUsersCount(supabase, filters, { verification_status: 'verified' }),
+      getUsersCount(supabase, filters, { verification_status: 'flagged' }),
+      getUsersWithTeamCount(supabase, filters),
+      getUsersCount(supabase, filters, { team_id: null }),
+      getTeamsCount(supabase, edition.id, filters),
+      getTeamsCount(supabase, edition.id, filters, { status: 'active' }),
+      getSubmissionsCount(supabase, edition.id, filters),
+      readCount(
+        supabase
+          .from('judges')
+          .select('id', { count: 'exact', head: true })
+          .eq('edition_id', edition.id)
+          .eq('is_active', true),
+      ),
+    ]);
+
+    const [
+      registrationsByDepartment,
+      teamsByDepartment,
+      submissionsByDepartment,
+      registrationsByStatus,
+      verificationByMethod,
+      teamsByStatus,
+      teamsByStage,
+      submissionsByStage,
+      submissionsByStatus,
+    ] = await Promise.all([
+      Promise.all(
+        DEPARTMENTS.map(async (department) => ({
+          label: department,
+          value: await getUsersCount(supabase, { ...filters, department }),
+        })),
+      ),
+      Promise.all(
+        DEPARTMENTS.map(async (department) => ({
+          label: department,
+          value: await getTeamsCount(supabase, edition.id, { ...filters, department }),
+        })),
+      ),
+      Promise.all(
+        DEPARTMENTS.map(async (department) => ({
+          label: department,
+          value: await getSubmissionsByDepartmentCount(supabase, edition.id, filters, department),
+        })),
+      ),
+      Promise.all(
+        VERIFICATION_STATUSES.map(async (status) => ({
+          label: status,
+          value: await getUsersCount(supabase, filters, { verification_status: status }),
+        })),
+      ),
+      Promise.all(
+        VERIFICATION_METHODS.map(async (method) => ({
+          label: method,
+          value: await getUsersCount(supabase, filters, { verification_method: method }),
+        })),
+      ),
+      Promise.all(
+        TEAM_STATUSES.map(async (status) => ({
+          label: status,
+          value: await getTeamsCount(supabase, edition.id, filters, { status }),
+        })),
+      ),
+      Promise.all(
+        STAGES.map(async (stage) => ({
+          label: `Stage ${stage}`,
+          value: await getTeamsCount(supabase, edition.id, filters, { current_stage: stage }),
+        })),
+      ),
+      Promise.all(
+        STAGES.map(async (stage) => ({
+          label: `Stage ${stage}`,
+          value: await getSubmissionsCount(supabase, edition.id, { ...filters, stage }),
+        })),
+      ),
+      Promise.all(
+        SUBMISSION_STATUSES.map(async (status) => ({
+          label: status,
+          value: await getSubmissionsCount(supabase, edition.id, filters, { status }),
+        })),
+      ),
+    ]);
+
+    const [registrationTrendRows, submissionTrendRows, teamMemberRows] = await Promise.all([
+      fetchAnalyticsRows<{ created_at: string }>((offset, limit) => {
+        let query = supabase
+          .from('users')
+          .select('created_at')
+          .eq('role', 'student')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .range(offset, offset + limit - 1);
+        if (filters.department) query = query.eq('department', filters.department);
+        return applyAnalyticsDateRange(query, 'created_at', filters);
+      }),
+      fetchAnalyticsRows<{ submitted_at: string }>((offset, limit) => {
+        let query = supabase
+          .from('submissions')
+          .select(filters.department ? 'submitted_at,teams!inner(department)' : 'submitted_at')
+          .eq('edition_id', edition.id)
+          .is('deleted_at', null)
+          .order('submitted_at', { ascending: true })
+          .range(offset, offset + limit - 1);
+        if (filters.department) query = query.eq('teams.department', filters.department);
+        if (filters.stage) query = query.eq('stage', filters.stage);
+        return applyAnalyticsDateRange(query, 'submitted_at', filters);
+      }),
+      fetchAnalyticsRows<{ team_id: string | null }>((offset, limit) => {
+        let query = supabase
+          .from('users')
+          .select('team_id')
+          .eq('role', 'student')
+          .not('team_id', 'is', null)
+          .is('deleted_at', null)
+          .range(offset, offset + limit - 1);
+        if (filters.department) query = query.eq('department', filters.department);
+        return query;
+      }),
+    ]);
+
+    const registrationTrend = new Map<string, number>();
+    const submissionTrend = new Map<string, number>();
+    registrationTrendRows.forEach((row) => incrementByDate(registrationTrend, row.created_at));
+    submissionTrendRows.forEach((row) => incrementByDate(submissionTrend, row.submitted_at));
+
+    const memberCountByTeam = new Map<string, number>();
+    for (const row of teamMemberRows) {
+      if (!row.team_id) continue;
+      memberCountByTeam.set(row.team_id, (memberCountByTeam.get(row.team_id) ?? 0) + 1);
+    }
+
+    const stageEligibleTeams = await getTeamsCount(supabase, edition.id, filters, { status: 'active' });
+    const stageSubmissions = await getSubmissionsCount(supabase, edition.id, { ...filters, stage: selectedStage });
+    const completionRate = stageEligibleTeams > 0 ? Math.round((stageSubmissions / stageEligibleTeams) * 100) : 0;
+    const averageTeamSize =
+      memberCountByTeam.size > 0
+        ? Number(
+            (
+              Array.from(memberCountByTeam.values()).reduce((sum, count) => sum + count, 0) /
+              memberCountByTeam.size
+            ).toFixed(1),
+          )
+        : 0;
+
+    const departmentLeaderboard = DEPARTMENTS.map((department) => {
+      const registrations = registrationsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
+      const teams = teamsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
+      const submissions = submissionsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
+      return {
+        department,
+        registrations,
+        teams,
+        submissions,
+        completionRate: teams > 0 ? Math.round((submissions / teams) * 100) : 0,
+      };
+    }).sort((a, b) => b.submissions - a.submissions || b.registrations - a.registrations);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        generatedAt: new Date().toISOString(),
+        filters: {
+          startDate: filters.startDate ?? null,
+          endDate: filters.endDate ?? null,
+          department: filters.department ?? null,
+          stage: filters.stage ?? null,
+        },
+        edition,
+        departments: DEPARTMENTS,
+        overview: {
+          registrations: totalRegistrations,
+          verifiedStudents,
+          flaggedStudents,
+          teams: totalTeams,
+          activeTeams,
+          submissions: totalSubmissions,
+          activeJudges,
+          completionRate,
+          averageTeamSize,
+        },
+        registrations: {
+          total: totalRegistrations,
+          byDepartment: registrationsByDepartment,
+          byStatus: registrationsByStatus,
+          withTeam: studentsWithTeam,
+          withoutTeam: studentsWithoutTeam,
+          trend: mergeTrendMaps(registrationTrend, new Map()),
+        },
+        teams: {
+          total: totalTeams,
+          byDepartment: teamsByDepartment,
+          byStatus: teamsByStatus,
+          byStage: teamsByStage,
+          averageSize: averageTeamSize,
+        },
+        submissions: {
+          total: totalSubmissions,
+          byDepartment: submissionsByDepartment,
+          byStage: submissionsByStage,
+          byStatus: submissionsByStatus,
+          trend: mergeTrendMaps(new Map(), submissionTrend),
+          completionRate,
+        },
+        verification: {
+          byStatus: registrationsByStatus,
+          byMethod: verificationByMethod,
+        },
+        trends: mergeTrendMaps(registrationTrend, submissionTrend),
+        departmentLeaderboard,
+      },
+    });
   } catch (err) {
     next(err);
   }

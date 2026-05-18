@@ -15,6 +15,7 @@ import {
   AdminTeamsQuerySchema,
   AdminSubmissionsQuerySchema,
   AdminJudgesQuerySchema,
+  AdminAnalyticsQuerySchema,
   ListTokensQuerySchema,
   RegenerateTokenSchema,
   AdminVerificationQueueQuerySchema,
@@ -32,6 +33,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import {
   getOverview,
+  getAnalytics,
   updateEdition,
   setActiveStage,
   toggleSignup,
@@ -103,6 +105,7 @@ const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole('admin'));
 
 adminRouter.get('/overview', getOverview);
+adminRouter.get('/analytics', validate(AdminAnalyticsQuerySchema, 'query'), getAnalytics);
 adminRouter.get(
   '/verifications/flagged',
   forceFlaggedVerificationStatus,

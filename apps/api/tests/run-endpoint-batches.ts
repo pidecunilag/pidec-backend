@@ -794,6 +794,7 @@ const run = async () => {
   console.log('\nBatch 4: Admin, content, export, and settings flow');
 
   expectStatus(await request(adminSession, '/api/v1/admin/overview'), 200, 'Admin overview failed');
+  expectStatus(await request(adminSession, '/api/v1/admin/analytics'), 200, 'Admin analytics failed');
   expectStatus(await request(adminSession, '/api/v1/admin/students'), 200, 'Admin students failed');
   expectStatus(await request(adminSession, '/api/v1/admin/teams'), 200, 'Admin teams failed');
   expectStatus(await request(adminSession, '/api/v1/admin/submissions'), 200, 'Admin submissions failed');
