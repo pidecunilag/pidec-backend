@@ -2,6 +2,7 @@ import { ZodError } from 'zod';
 import { type ErrorRequestHandler, type RequestHandler } from 'express';
 import { ERROR_CODES, ERROR_HTTP_STATUS, type ApiError } from '@pidec/shared';
 import { AppError } from '../../shared/errors/app-error.js';
+import { mapDatabaseError } from '../../shared/errors/database-error.js';
 import { logger } from '../../shared/logger/index.js';
 import { isProd } from '../../shared/config/env.js';
 
@@ -45,6 +46,20 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
 
   // ── Unknown error ───────────────────────────────────────────────────────
+  const databaseError = mapDatabaseError(err);
+  if (databaseError) {
+    const body: ApiError = {
+      success: false,
+      error: {
+        code: databaseError.code,
+        message: databaseError.message,
+        ...(databaseError.details !== undefined ? { details: databaseError.details } : {}),
+      },
+    };
+    res.status(databaseError.statusCode).json(body);
+    return;
+  }
+
   logger.error({ err, path: req.path, method: req.method }, 'Unhandled error');
   const body: ApiError = {
     success: false,

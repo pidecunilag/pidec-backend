@@ -581,7 +581,7 @@ export const swaggerDocument = {
           201: successResponse('Registration completed'),
           400: errorResponse('Validation failed'),
           403: errorResponse('Registrations are closed'),
-          409: errorResponse('Email already registered'),
+          409: errorResponse('Email or matric number already registered'),
         },
       },
     },

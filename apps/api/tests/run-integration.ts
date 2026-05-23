@@ -11,6 +11,7 @@ process.env.DOTENV_CONFIG_PATH = fileURLToPath(new URL('./.env.test', import.met
 delete process.env.REDIS_URL;
 
 const { createApp } = await import('../src/app.js');
+const { mapDatabaseError } = await import('../src/shared/errors/database-error.js');
 
 const app = createApp();
 const server = app.listen(0);
@@ -113,6 +114,28 @@ const run = async () => {
   };
   assert.equal(invalidLoginBody.error.code, 'VALIDATION_ERROR');
   assert.ok(invalidLoginBody.error.details);
+
+  const duplicateMatricError = mapDatabaseError({
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "idx_users_matric_unique"',
+    details: 'Key (matric_number)=(240405047) already exists.',
+  });
+  assert.ok(duplicateMatricError);
+  assert.equal(duplicateMatricError.statusCode, 409);
+  assert.equal(duplicateMatricError.code, 'DUPLICATE_ENTRY');
+  assert.equal(duplicateMatricError.message, 'This matric number is already registered.');
+  assert.deepEqual(duplicateMatricError.details, { field: 'matricNumber' });
+
+  const duplicateEmailError = mapDatabaseError({
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "idx_users_email_unique"',
+    details: 'Key (email)=(student@example.com) already exists.',
+  });
+  assert.ok(duplicateEmailError);
+  assert.equal(duplicateEmailError.statusCode, 409);
+  assert.equal(duplicateEmailError.code, 'DUPLICATE_ENTRY');
+  assert.equal(duplicateEmailError.message, 'This email is already registered.');
+  assert.deepEqual(duplicateEmailError.details, { field: 'email' });
 };
 
 try {
