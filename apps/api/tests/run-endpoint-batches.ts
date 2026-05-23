@@ -628,16 +628,6 @@ const run = async () => {
 
   console.log('\nBatch 3: Submission and feedback flow');
 
-  const tokenResult = await request(adminSession, '/api/v1/admin/tokens', {
-    method: 'POST',
-    json: { department },
-  });
-  expectStatus(tokenResult, 201, 'Department token generation failed');
-  const tokenBody = expectJsonObject<{ success: true; data: { token: { token_string: string } } }>(
-    tokenResult,
-    'Token response was not JSON',
-  );
-  const submissionToken = tokenBody.data.token.token_string;
   const stage1UploadResult = await request(leaderSession, '/api/v1/submissions/files', {
     method: 'POST',
     body: createSubmissionPdfUpload(1),
@@ -651,7 +641,6 @@ const run = async () => {
   const stage1Result = await request(leaderSession, '/api/v1/submissions', {
     method: 'POST',
     json: {
-      token: submissionToken,
       formData: { submission_type: 'document_upload' },
       fileIds: [stage1UploadBody.data.file.id],
     },

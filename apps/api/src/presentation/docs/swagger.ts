@@ -240,9 +240,8 @@ export const swaggerDocument = {
       },
       Stage1SubmissionRequest: {
         type: 'object',
-        required: ['token', 'formData', 'fileIds'],
+        required: ['formData', 'fileIds'],
         properties: {
-          token: { type: 'string', example: 'AbC123xYz890' },
           formData: {
             type: 'object',
             required: ['submission_type'],

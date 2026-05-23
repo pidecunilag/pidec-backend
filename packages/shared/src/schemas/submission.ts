@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { SUBMISSION_TOKEN_REGEX } from '../constants/regex.js';
 
 /** Cheap, deterministic word count: collapse whitespace, split on space. */
 export const countWords = (text: string): number => {
@@ -14,13 +13,7 @@ export const Stage1FormDataSchema = z.object({
 
 export type Stage1FormData = z.infer<typeof Stage1FormDataSchema>;
 
-export const SubmissionTokenSchema = z
-  .string()
-  .trim()
-  .regex(SUBMISSION_TOKEN_REGEX, 'Invalid submission token format');
-
 export const Stage1SubmitSchema = z.object({
-  token: SubmissionTokenSchema,
   formData: Stage1FormDataSchema.default({ submission_type: 'document_upload' }),
   fileIds: z.array(z.string()).min(1, 'Upload your Stage 1 proposal document').max(1, 'Upload only one Stage 1 proposal document'),
 });

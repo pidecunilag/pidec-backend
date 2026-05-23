@@ -95,22 +95,6 @@ export class SubmissionApplicationService {
     if (existing) return { submission: existing, duplicated: true };
     const files = await submissionUploadService.resolveFilesForSubmission(userId, 1, payload.fileIds);
 
-    const { data: tokenRow, error: tokenError } = await supabase
-      .from('tokens')
-      .select('*')
-      .eq('edition_id', edition.id)
-      .eq('department', team.department)
-      .eq('token_string', payload.token)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (tokenError) throw tokenError;
-    if (!tokenRow) throw new AppError(ERROR_CODES.INVALID_TOKEN, 'Invalid submission token');
-    const tokenRecord = tokenRow as { id: string; expires_at: string | null; use_count: number };
-    if (tokenRecord.expires_at && new Date(tokenRecord.expires_at).getTime() < Date.now()) {
-      throw new AppError(ERROR_CODES.INVALID_TOKEN, 'Submission token has expired');
-    }
-
     const { data: submission, error } = await supabase
       .from('submissions')
       .insert([
@@ -121,7 +105,6 @@ export class SubmissionApplicationService {
           stage: 1,
           form_data: payload.formData,
           files,
-          token_id: tokenRecord.id,
           status: 'submitted',
           is_locked: true,
         },
@@ -132,24 +115,15 @@ export class SubmissionApplicationService {
     if (error) throw error;
     const createdSubmission = submission as SubmissionRow;
 
-    await Promise.all([
-      supabase.from('notifications').insert([
-        {
-          user_id: team.leader_id,
-          type: 'submission_confirmed',
-          title: 'Submission received',
-          message: `Your Stage 1 submission for ${team.name} has been received.`,
-          action_url: '/dashboard',
-        },
-      ] as never[]),
-      supabase
-        .from('tokens')
-        .update({
-          use_count: tokenRecord.use_count + 1,
-          last_used_at: new Date().toISOString(),
-        } as never)
-        .eq('id', tokenRecord.id),
-    ]);
+    await supabase.from('notifications').insert([
+      {
+        user_id: team.leader_id,
+        type: 'submission_confirmed',
+        title: 'Submission received',
+        message: `Your Stage 1 submission for ${team.name} has been received.`,
+        action_url: '/dashboard',
+      },
+    ] as never[]);
 
     logger.info({ submissionId: createdSubmission.id, teamId: team.id, stage: 1 }, 'Stage 1 submission created');
     await submissionUploadService.markConsumed(payload.fileIds);
