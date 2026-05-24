@@ -42,6 +42,7 @@ import {
   listUsers,
   listTeams,
   listSubmissions,
+  getSubmissionFileDownload,
   listJudges,
   listVerificationQueue,
   listStage2Checkpoints,
@@ -83,6 +84,10 @@ const UserParamsSchema = z.object({ userId: UuidSchema });
 const TeamParamsSchema = z.object({ teamId: UuidSchema });
 const JudgeParamsSchema = z.object({ judgeId: UuidSchema });
 const SubmissionParamsSchema = z.object({ submissionId: UuidSchema });
+const SubmissionFileParamsSchema = z.object({
+  submissionId: UuidSchema,
+  fileId: z.string().min(1),
+});
 const StudentParamsSchema = z.object({ userId: UuidSchema });
 
 const forceStudentRole: RequestHandler = (req, _res, next) => {
@@ -148,6 +153,11 @@ adminRouter.get('/verification-queue', validate(AdminVerificationQueueQuerySchem
 adminRouter.get('/checkpoints', validate(Stage2CheckpointListQuerySchema, 'query'), listStage2Checkpoints);
 adminRouter.get('/teams', validate(AdminTeamsQuerySchema, 'query'), listTeams);
 adminRouter.get('/submissions', validate(AdminSubmissionsQuerySchema, 'query'), listSubmissions);
+adminRouter.get(
+  '/submissions/:submissionId/files/:fileId/download',
+  validate(SubmissionFileParamsSchema, 'params'),
+  getSubmissionFileDownload,
+);
 adminRouter.get('/judges', validate(AdminJudgesQuerySchema, 'query'), listJudges);
 
 adminRouter.post(

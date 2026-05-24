@@ -9,6 +9,14 @@ import { env } from '../../shared/config/env.js';
 import { adminOrchestrationService } from '../../application/admin/admin-orchestration-service.js';
 import { adminExportService } from '../../application/admin/admin-export-service.js';
 
+const SUBMISSION_BUCKET = 'submissions';
+
+type StoredSubmissionFile = {
+  id?: string;
+  url?: string;
+  filename?: string;
+};
+
 const getActiveEdition = async () => {
   const supabase = getSupabaseService() as any;
   const { data, error } = await supabase
@@ -34,6 +42,14 @@ const isMissingTableError = (error: unknown): boolean => {
         : JSON.stringify(error);
 
   return /could not find the table|schema cache/i.test(message.toLowerCase());
+};
+
+const getStoredFiles = (files: unknown): StoredSubmissionFile[] => {
+  if (!Array.isArray(files)) return [];
+  return files.filter((file): file is StoredSubmissionFile => {
+    if (!file || typeof file !== 'object') return false;
+    return 'url' in file || 'id' in file;
+  });
 };
 
 const getCursorPage = <T extends { created_at?: string | null; submitted_at?: string | null }>(
@@ -439,6 +455,48 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
           limit: limitNumber,
           offset: offsetNumber,
           hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getSubmissionFileDownload: RequestHandler = async (req, res, next) => {
+  try {
+    const { submissionId, fileId } = req.params as { submissionId: string; fileId: string };
+    const supabase = getSupabaseService() as any;
+    const edition = await getActiveEdition();
+
+    const { data: submission, error } = await supabase
+      .from('submissions')
+      .select('id,edition_id,files')
+      .eq('id', submissionId)
+      .eq('edition_id', edition.id)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!submission) throw AppError.notFound('Submission not found');
+
+    const files = getStoredFiles(submission.files);
+    const file = files.find((item) => item.id === fileId || item.url === fileId);
+    if (!file?.url) throw AppError.notFound('Submission file not found');
+
+    const { data, error: signedUrlError } = await supabase.storage
+      .from(SUBMISSION_BUCKET)
+      .createSignedUrl(file.url, 300, { download: file.filename ?? 'submission-file' });
+
+    if (signedUrlError) throw signedUrlError;
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        download: {
+          url: data.signedUrl,
+          filename: file.filename ?? 'submission-file',
+          expiresInSeconds: 300,
         },
       },
     });
