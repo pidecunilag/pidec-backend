@@ -32,6 +32,7 @@ import { TeamDissolvedEmail } from './templates/team-dissolved.js';
 import { VerificationEmail } from './templates/verification-email.js';
 import { PasswordResetEmail } from './templates/password-reset-email.js';
 import { JudgeInviteEmail } from './templates/judge-invite.js';
+import { Stage1SubmissionReminderEmail } from './templates/stage1-submission-reminder.js';
 
 /**
  * Resend implementation of IEmailService.
@@ -159,6 +160,17 @@ export class ResendEmailService implements IEmailService {
 
   sendJudgeInvite(to: EmailRecipient, p: JudgeInvitePayload) {
     return this.dispatch(to, `PIDEC judge invitation for ${p.stageLabel}`, JudgeInviteEmail(p));
+  }
+
+  sendStage1PendingSubmissionReminder(
+    to: EmailRecipient,
+    p: { recipientName: string; teamName: string },
+  ) {
+    return this.dispatch(
+      to,
+      'Reminder: Stage 1 submission deadline is May 31',
+      Stage1SubmissionReminderEmail(p),
+    );
   }
 }
 
