@@ -8,7 +8,7 @@
  * The single regex captures all three rules:
  *   ^(?:18|19|2[0-5])04\d{5}$
  */
-export const MATRIC_REGEX = /^(?:18|2[0-5])04\d{5}$/;
+export const MATRIC_REGEX = /^(?:1[89]|2[0-5])04\d{5}$/;
 
 /** Loose digit-only sanity check (DB-level constraint matches this). */
 export const MATRIC_DIGITS_REGEX = /^\d{9}$/;
