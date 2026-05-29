@@ -29,7 +29,7 @@ export const MatricSchema = z
   .pipe(
     z.string().regex(MATRIC_REGEX, {
       message:
-        'Matric number must be 9 digits, start with admission year (19–25), and have faculty code 04 (Engineering)',
+        'Matric number must be 9 digits, start with admission year (18–25), and have faculty code 04 (Engineering)',
     }),
   );
 

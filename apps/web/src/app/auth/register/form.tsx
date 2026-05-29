@@ -110,8 +110,8 @@ export default function StudentRegistrationForm() {
       const cleanMatric = formData.matricNumber.replace(/\D/g, '');
       if (!/^\d{9}$/.test(cleanMatric)) {
         newErrors.matricNumber = 'Matric must be 9 digits';
-      } else if (!/^(19|2[0-5])/.test(cleanMatric.substring(0, 2))) {
-        newErrors.matricNumber = 'Invalid admission year (must be 19–25)';
+      } else if (!/^(18|2[0-5])/.test(cleanMatric.substring(0, 2))) {
+        newErrors.matricNumber = 'Invalid admission year (must be 18–25)';
       } else if (!cleanMatric.startsWith('04', 4)) {
         newErrors.matricNumber = 'Faculty code must be 04 (Engineering)';
       }
@@ -233,7 +233,7 @@ export default function StudentRegistrationForm() {
               {/* Matric Number */}
               <TextInput
                 label="Matric Number"
-                placeholder="19 04 12345"
+                placeholder="18 04 12345"
                 description="Format: YY-FC-XXXXX (Year-Faculty-Serial). Engineering only (FC=04)"
                 value={formData.matricNumber}
                 onChange={(e) => {
