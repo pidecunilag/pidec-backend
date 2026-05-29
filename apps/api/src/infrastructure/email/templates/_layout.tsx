@@ -14,8 +14,13 @@ import {
 import { type ReactNode } from 'react';
 import { env } from '../../../shared/config/env.js';
 
-const appUrl = env.APP_URL.replace(/\/$/, '');
-const logoUrl = `${appUrl}/logos/Coloured%20Logo%20Black%20text%20Trans.png`;
+const fallbackAppUrl = 'https://pidec.com.ng';
+const resolvedAppUrl =
+  env.APP_URL && !/localhost|127\.0\.0\.1|\[::1\]/i.test(env.APP_URL) ? env.APP_URL : fallbackAppUrl;
+
+const appUrl = resolvedAppUrl.replace(/\/$/, '');
+const logoLightUrl = 'https://pidec.com.ng/logos/Coloured%20Logo%20Black%20text%20Trans.png';
+const logoDarkUrl = 'https://pidec.com.ng/logos/Coloured%20Logo%20White%20text%20Trans.png';
 
 export interface EmailLayoutProps {
   preview: string;
@@ -24,13 +29,36 @@ export interface EmailLayoutProps {
 
 export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
   <Html>
-    <Head />
+    <Head>
+      <style>
+        {`
+          .pidec-logo-dark { display: none !important; }
+          @media (prefers-color-scheme: dark) {
+            .pidec-logo-light { display: none !important; }
+            .pidec-logo-dark { display: block !important; }
+          }
+        `}
+      </style>
+    </Head>
     <Preview>{preview}</Preview>
     <Tailwind>
       <Body className="m-0 bg-[#f8f4fb] p-0 font-sans text-[16px] leading-[1.65] text-[#2b0640]">
         <Container className="mx-auto max-w-[600px] px-6 py-10">
           <Section className="rounded-[28px] border border-[#eadff0] bg-white px-8 py-6 shadow-sm">
-            <Img src={logoUrl} width="154" height="44" alt="PIDEC 1.0" />
+            <Img
+              src={logoLightUrl}
+              width="154"
+              height="44"
+              alt="PIDEC 1.0"
+              className="pidec-logo-light"
+            />
+            <Img
+              src={logoDarkUrl}
+              width="154"
+              height="44"
+              alt="PIDEC 1.0"
+              className="pidec-logo-dark"
+            />
           </Section>
 
           <Section className="mt-5 rounded-[28px] border border-[#eadff0] bg-white p-8 shadow-sm">

@@ -30,6 +30,8 @@ const EnvSchema = z.object({
 
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().default('PIDEC 1.0 <competitions@pidec.com.ng>'),
+  BREVO_API_KEY: z.string().optional(),
+  BREVO_FROM_EMAIL: z.string().optional(),
 
   GROQ_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
