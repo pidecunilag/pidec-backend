@@ -2,13 +2,13 @@
  * Matric number rules per PRD §3.1:
  *   - Exactly 9 digits
  *   - YY (positions 0-1): 18–25  (admission year window for active students)
- *   - FF (positions 2-3): 04     (Engineering faculty)
+ *   - FF (positions 2-3): 04 or 08 (Engineering students may retain transferred faculty numbers)
  *   - DDXXX (positions 4-8): department + sequence (any 5 digits)
  *
  * The single regex captures all three rules:
- *   ^(?:18|19|2[0-5])04\d{5}$
+ *   ^(?:18|19|2[0-5])(?:04|08)\d{5}$
  */
-export const MATRIC_REGEX = /^(?:1[89]|2[0-5])04\d{5}$/;
+export const MATRIC_REGEX = /^(?:1[89]|2[0-5])(?:04|08)\d{5}$/;
 
 /** Loose digit-only sanity check (DB-level constraint matches this). */
 export const MATRIC_DIGITS_REGEX = /^\d{9}$/;

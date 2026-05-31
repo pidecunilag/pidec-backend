@@ -29,7 +29,7 @@ export const MatricSchema = z
   .pipe(
     z.string().regex(MATRIC_REGEX, {
       message:
-        'Matric number must be 9 digits, start with admission year (18–25), and have faculty code 04 (Engineering)',
+        'Matric number must be 9 digits, start with admission year 18-25, and have faculty code 04 or 08',
     }),
   );
 
@@ -49,7 +49,7 @@ export const RegisterSchema = z.object({
     .refine(
       (n): n is (typeof STUDENT_LEVELS)[number] =>
         (STUDENT_LEVELS as readonly number[]).includes(n),
-      { message: 'Select a valid level (100–500)' },
+      { message: 'Select a valid level (100-500)' },
     ),
 });
 
