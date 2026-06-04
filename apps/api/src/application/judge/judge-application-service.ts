@@ -1,9 +1,16 @@
 import type { Database } from '@pidec/db-types';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
+import { env } from '../../shared/config/env.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { platformReadService } from '../shared/platform-read-service.js';
 
 const SUBMISSION_BUCKET = 'submissions';
+const JUDGE_EXCLUDED_TEAM_IDS = new Set(
+  (env.JUDGE_EXCLUDED_TEAM_IDS ?? '')
+    .split(',')
+    .map((teamId) => teamId.trim())
+    .filter(Boolean),
+);
 
 type SubmissionWithDepartment = Database['public']['Tables']['submissions']['Row'] & {
   teams: { id: string; department: string; name?: string | null; status?: string | null } | null;
@@ -67,7 +74,9 @@ export class JudgeApplicationService {
       .order('submitted_at', { ascending: false });
 
     if (error) throw error;
-    const submissions = (data ?? []) as SubmissionWithDepartment[];
+    const submissions = ((data ?? []) as SubmissionWithDepartment[]).filter(
+      (submission) => !this.isExcludedTeamSubmission(submission),
+    );
     const submissionIds = submissions.map((submission) => submission.id);
     if (submissionIds.length === 0) return [];
 
@@ -226,7 +235,16 @@ export class JudgeApplicationService {
     if (!data) {
       throw AppError.notFound(`Stage ${stage} submission not found`);
     }
-    return data as SubmissionWithDepartment;
+    const submission = data as SubmissionWithDepartment;
+    if (this.isExcludedTeamSubmission(submission)) {
+      throw AppError.notFound(`Stage ${stage} submission not found`);
+    }
+    return submission;
+  }
+
+  private isExcludedTeamSubmission(submission: SubmissionWithDepartment) {
+    const teamId = submission.teams?.id;
+    return Boolean(teamId && JUDGE_EXCLUDED_TEAM_IDS.has(teamId));
   }
 
   private getStoredFiles(files: unknown): StoredSubmissionFile[] {

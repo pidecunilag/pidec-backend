@@ -26,6 +26,8 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: JUDGE_EXCLUDED_TEAM_IDS
+        sync: false
       - key: APP_URL
         sync: false
       - key: CORS_ORIGIN

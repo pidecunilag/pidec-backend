@@ -35,6 +35,7 @@ const EnvSchema = z.object({
 
   GROQ_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
+  JUDGE_EXCLUDED_TEAM_IDS: z.string().optional(),
 
   RATE_LIMIT_REGISTRATION_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
   RATE_LIMIT_REGISTRATION_MAX: z.coerce.number().int().positive().default(5),
