@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import VerifyEmailPage from './verify-email-page.js';
 
 export const metadata: Metadata = {
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <VerifyEmailPage />;
+  return (
+    <Suspense fallback={null}>
+      <VerifyEmailPage />
+    </Suspense>
+  );
 }

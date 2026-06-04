@@ -16,6 +16,19 @@ type StoredSubmissionFile = {
   filename?: string;
 };
 
+const STAGE_1_SCORE_LIMITS = {
+  problem_statement_clarity: 20,
+  proposed_solution_quality: 30,
+  theme_alignment: 20,
+  feasibility_assessment: 20,
+  departmental_relevance: 10,
+} as const;
+
+type Stage1ScorePayload = {
+  scores: Record<keyof typeof STAGE_1_SCORE_LIMITS, number>;
+  comments: Record<string, string | undefined>;
+};
+
 export class JudgeApplicationService {
   private readonly supabase = getSupabaseService();
 
@@ -54,7 +67,60 @@ export class JudgeApplicationService {
       .order('submitted_at', { ascending: false });
 
     if (error) throw error;
-    return data ?? [];
+    const submissions = (data ?? []) as SubmissionWithDepartment[];
+    const submissionIds = submissions.map((submission) => submission.id);
+    if (submissionIds.length === 0) return [];
+
+    const { data: scoreRows, error: scoreError } = await this.supabase
+      .from('judge_scores')
+      .select('*')
+      .eq('judge_id', judgeId)
+      .in('submission_id', submissionIds)
+      .is('deleted_at', null);
+
+    if (scoreError) throw scoreError;
+
+    const scoresBySubmission = new Map(
+      (scoreRows ?? []).map((score) => [(score as { submission_id: string }).submission_id, score]),
+    );
+
+    return submissions.map((submission) => ({
+      ...submission,
+      judge_score: scoresBySubmission.get(submission.id) ?? null,
+    }));
+  }
+
+  async submitStage1Score(judgeId: string, submissionId: string, payload: Stage1ScorePayload) {
+    const judge = await platformReadService.getJudgeById(judgeId);
+    if (judge.stage_scope !== 'stage_1') {
+      throw AppError.forbidden('Judge is not scoped for Stage 1');
+    }
+
+    const submission = await this.getSubmissionWithDepartment(submissionId, 1);
+    const department = submission.teams?.department;
+    if (!department) throw AppError.notFound('Submission team could not be resolved');
+    if (!judge.assigned_departments.includes(department)) {
+      throw AppError.forbidden('Submission is outside judge department scope');
+    }
+
+    const totalScore = Object.entries(STAGE_1_SCORE_LIMITS).reduce((sum, [key, max]) => {
+      const value = payload.scores[key as keyof typeof STAGE_1_SCORE_LIMITS];
+      if (value < 0 || value > max) {
+        throw AppError.validation(`${key} must be between 0 and ${max}`);
+      }
+      return sum + value;
+    }, 0);
+
+    const comments = Object.fromEntries(
+      Object.entries(payload.comments ?? {}).filter(([, value]) => typeof value === 'string' && value.trim().length > 0),
+    );
+
+    return this.upsertJudgeScore(submissionId, judgeId, {
+      scores: payload.scores,
+      comments,
+      total_score: Number(totalScore.toFixed(2)),
+      is_representative_pick: false,
+    });
   }
 
   async pickDepartmentRepresentative(

@@ -1,10 +1,36 @@
 import { z } from 'zod';
 import { UuidSchema } from './common.js';
 
+export const Stage1ScoreCriteriaSchema = z.object({
+  problem_statement_clarity: z.number().min(0).max(20),
+  proposed_solution_quality: z.number().min(0).max(30),
+  theme_alignment: z.number().min(0).max(20),
+  feasibility_assessment: z.number().min(0).max(20),
+  departmental_relevance: z.number().min(0).max(10),
+});
+
+export const Stage1ScoreCommentsSchema = z
+  .object({
+    problem_statement_clarity: z.string().trim().max(2000).optional(),
+    proposed_solution_quality: z.string().trim().max(2000).optional(),
+    theme_alignment: z.string().trim().max(2000).optional(),
+    feasibility_assessment: z.string().trim().max(2000).optional(),
+    departmental_relevance: z.string().trim().max(2000).optional(),
+    overall: z.string().trim().max(5000).optional(),
+  })
+  .default({});
+
+export const Stage1ScoreSchema = z.object({
+  submissionId: UuidSchema,
+  scores: Stage1ScoreCriteriaSchema,
+  comments: Stage1ScoreCommentsSchema,
+});
+
+export type Stage1ScoreInput = z.infer<typeof Stage1ScoreSchema>;
+
 /**
- * Stage 1 judge action: select the representative team for a department.
- * Per PRD §7b.2 the rubric is a guideline only — judges do not enter
- * structured scores at Stage 1. Optional comments are supported.
+ * Legacy Stage 1 judge action kept for compatibility with earlier admin flows.
+ * Judges now submit weighted rubric scores; admins make final representative decisions.
  */
 export const Stage1RepresentativeSelectionSchema = z.object({
   submissionId: UuidSchema,

@@ -57,6 +57,31 @@ export const pickStage1Representative: RequestHandler = async (req, res, next) =
   }
 };
 
+export const submitStage1Score: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.user) throw AppError.unauthenticated();
+    const { submissionId, scores, comments } = req.body as {
+      submissionId: string;
+      scores: Record<
+        | 'problem_statement_clarity'
+        | 'proposed_solution_quality'
+        | 'theme_alignment'
+        | 'feasibility_assessment'
+        | 'departmental_relevance',
+        number
+      >;
+      comments?: Record<string, string | undefined>;
+    };
+    const score = await judgeApplicationService.submitStage1Score(req.user.id, submissionId, {
+      scores,
+      comments: comments ?? {},
+    });
+    res.status(200).json({ status: 'success', data: { score } });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const pickDepartmentRepresentative: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user) throw AppError.unauthenticated();

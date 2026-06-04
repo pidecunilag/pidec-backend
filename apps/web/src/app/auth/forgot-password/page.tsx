@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
                   Check Your Email
                 </Title>
                 <Text c="dimmed" size="sm" ta="center">
-                  If an account exists with that email, we've sent a password reset link. Please
+                  If an account exists with that email, we&apos;ve sent a password reset link. Please
                   check your inbox and spam folder.
                 </Text>
               </Stack>
@@ -107,7 +107,7 @@ export default function ForgotPasswordPage() {
                   Forgot Password?
                 </Title>
                 <Text c="dimmed" size="sm">
-                  Enter your email and we'll send you a link to reset your password
+                  Enter your email and we&apos;ll send you a link to reset your password
                 </Text>
               </Stack>
 

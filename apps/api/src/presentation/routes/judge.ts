@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { Stage1RepresentativeSelectionSchema, Stage2ScoreSchema, UuidSchema } from '@pidec/shared';
+import { Stage1RepresentativeSelectionSchema, Stage1ScoreSchema, Stage2ScoreSchema, UuidSchema } from '@pidec/shared';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -9,6 +9,7 @@ import {
   listJudgeSubmissions,
   pickDepartmentRepresentative,
   pickStage1Representative,
+  submitStage1Score,
   submitSubmissionScore,
   submitStage2Score,
 } from '../controllers/judge-controller.js';
@@ -41,6 +42,7 @@ judgeRouter.post(
   validate(Stage1RepresentativeSelectionSchema),
   pickStage1Representative,
 );
+judgeRouter.post('/stage-1/score', validate(Stage1ScoreSchema), submitStage1Score);
 judgeRouter.post('/stage-2/score', validate(Stage2ScoreWithSubmissionSchema), submitStage2Score);
 judgeRouter.post(
   '/scores/:submissionId',

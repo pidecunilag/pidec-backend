@@ -194,6 +194,35 @@ export class PlatformApiClient {
     return unwrap(response, 'Failed to load judge submissions');
   }
 
+  async getJudgeSubmissionFileDownload(
+    submissionId: string,
+    fileId: string,
+  ): Promise<{ download: { url: string; filename: string; expiresInSeconds: number } }> {
+    const response = await apiClient.get<{
+      download: { url: string; filename: string; expiresInSeconds: number };
+    }>(`/judge/submissions/${submissionId}/files/${encodeURIComponent(fileId)}/download`);
+    return unwrap(response, 'Failed to create file download');
+  }
+
+  async submitStage1Score(
+    submissionId: string,
+    scores: {
+      problem_statement_clarity: number;
+      proposed_solution_quality: number;
+      theme_alignment: number;
+      feasibility_assessment: number;
+      departmental_relevance: number;
+    },
+    comments: Record<string, string | undefined>,
+  ): Promise<{ score: JudgeScore }> {
+    const response = await apiClient.post<{ score: JudgeScore }>('/judge/stage-1/score', {
+      submissionId,
+      scores,
+      comments,
+    });
+    return unwrap(response, 'Failed to save Stage 1 score');
+  }
+
   async pickStage1Representative(
     submissionId: string,
     comments?: string,
