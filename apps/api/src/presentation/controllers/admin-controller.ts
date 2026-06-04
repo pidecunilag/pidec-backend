@@ -89,6 +89,13 @@ type TrendDatum = {
   submissions?: number;
 };
 
+type AdminSubmissionRow = {
+  id: string;
+  created_at?: string | null;
+  submitted_at?: string | null;
+  [key: string]: unknown;
+};
+
 const VERIFICATION_STATUSES = ['pending', 'verified', 'flagged', 'rejected', 'suspended'] as const;
 const VERIFICATION_METHODS = ['groq', 'gemini', 'manual'] as const;
 const TEAM_STATUSES = ['active', 'under_review', 'disqualified'] as const;
@@ -222,6 +229,56 @@ const fetchAnalyticsRows = async <T>(
   }
 
   return rows;
+};
+
+const attachSubmissionReviewData = async <T extends AdminSubmissionRow>(
+  supabase: any,
+  submissions: T[],
+): Promise<(T & { judge_scores: unknown[]; feedback_record: unknown | null })[]> => {
+  const submissionIds = submissions.map((submission) => submission.id);
+  if (submissionIds.length === 0) {
+    return submissions.map((submission) => ({
+      ...submission,
+      judge_scores: [],
+      feedback_record: null,
+    }));
+  }
+
+  const [scoresResult, feedbackResult] = await Promise.all([
+    supabase
+      .from('judge_scores')
+      .select('*, judges!inner(id,name,email,stage_scope)')
+      .in('submission_id', submissionIds)
+      .is('deleted_at', null)
+      .order('submitted_at', { ascending: false }),
+    supabase
+      .from('feedback')
+      .select('*')
+      .in('submission_id', submissionIds)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false }),
+  ]);
+
+  if (scoresResult.error) throw scoresResult.error;
+  if (feedbackResult.error) throw feedbackResult.error;
+
+  const scoresBySubmission = new Map<string, unknown[]>();
+  for (const score of scoresResult.data ?? []) {
+    const submissionId = (score as { submission_id: string }).submission_id;
+    scoresBySubmission.set(submissionId, [...(scoresBySubmission.get(submissionId) ?? []), score]);
+  }
+
+  const feedbackBySubmission = new Map<string, unknown>();
+  for (const feedback of feedbackResult.data ?? []) {
+    const submissionId = (feedback as { submission_id: string }).submission_id;
+    if (!feedbackBySubmission.has(submissionId)) feedbackBySubmission.set(submissionId, feedback);
+  }
+
+  return submissions.map((submission) => ({
+    ...submission,
+    judge_scores: scoresBySubmission.get(submission.id) ?? [],
+    feedback_record: feedbackBySubmission.get(submission.id) ?? null,
+  }));
 };
 
 const incrementByDate = (map: Map<string, number>, value?: string | null) => {
@@ -400,19 +457,20 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
     const { q, stage, department, teamId, status, cursor, limit, offset } = req.query as any;
     const limitNumber = Number(limit ?? 20);
     const offsetNumber = Number(offset ?? 0);
+    const stageNumber = Number(stage);
 
     const supabase = getSupabaseService() as any;
     const edition = await getActiveEdition();
 
     let query = supabase
       .from('submissions')
-      .select('*, teams!inner(id,name,department,status), users!submissions_submitted_by_fkey(id,name,email)', {
+      .select('*, teams!inner(id,name,department,status,current_stage), users!submissions_submitted_by_fkey(id,name,email)', {
         count: cursor ? undefined : 'exact',
       })
       .eq('edition_id', edition.id)
       .is('deleted_at', null);
 
-    if (typeof stage === 'number') query = query.eq('stage', stage);
+    if (Number.isInteger(stageNumber)) query = query.eq('stage', stageNumber);
     if (status) query = query.eq('status', status);
     if (teamId) query = query.eq('team_id', teamId);
     if (department) query = query.eq('teams.department', department);
@@ -436,8 +494,10 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
       throw error;
     }
 
+    const submissions = await attachSubmissionReviewData(supabase, data ?? []);
+
     if (cursor) {
-      const page = getCursorPage(data ?? [], limitNumber, 'submitted_at');
+      const page = getCursorPage(submissions, limitNumber, 'submitted_at');
       res.status(200).json({
         status: 'success',
         data: { submissions: page.items },
@@ -449,7 +509,7 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       data: {
-        submissions: data ?? [],
+        submissions,
         pagination: {
           total: count ?? 0,
           limit: limitNumber,

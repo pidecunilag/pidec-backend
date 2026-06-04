@@ -15,6 +15,12 @@ import {
 } from '../shared/platform-read-service.js';
 
 type JudgeRow = Database['public']['Tables']['judges']['Row'];
+type JudgeScoreForFeedback = Database['public']['Tables']['judge_scores']['Row'] & {
+  judges?: { name?: string | null; email?: string | null } | null;
+};
+type SubmissionForFeedback = Database['public']['Tables']['submissions']['Row'] & {
+  teams?: { id: string; name?: string | null; current_stage?: number | null } | null;
+};
 
 const authService = new AuthService();
 const supabase = getSupabaseService();
@@ -45,6 +51,46 @@ const queueTeamEmailFanout = (
   buildTask: (member: TeamMemberSummary) => Promise<unknown>,
 ) => {
   fireAndForget(Promise.allSettled(members.map((member) => buildTask(member))), context);
+};
+
+const averageScoreMaps = (scores: JudgeScoreForFeedback[]) => {
+  const keys = Array.from(
+    new Set(
+      scores.flatMap((score) =>
+        Object.keys((score.scores ?? {}) as Record<string, number>),
+      ),
+    ),
+  );
+
+  return Object.fromEntries(
+    keys.map((key) => {
+      const values = scores
+        .map((score) => (score.scores as Record<string, number> | null)?.[key])
+        .filter((value): value is number => typeof value === 'number');
+      const average =
+        values.length > 0
+          ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2))
+          : 0;
+      return [key, average];
+    }),
+  );
+};
+
+const mergeJudgeComments = (scores: JudgeScoreForFeedback[]) => {
+  const onlyScore = scores[0];
+  if (scores.length === 1 && onlyScore) {
+    return (onlyScore.comments ?? {}) as Record<string, string>;
+  }
+
+  const merged: Record<string, string> = {};
+  scores.forEach((score, index) => {
+    const judgeLabel = score.judges?.name ?? score.judges?.email ?? `Judge ${index + 1}`;
+    for (const [key, value] of Object.entries((score.comments ?? {}) as Record<string, string>)) {
+      if (!value?.trim()) continue;
+      merged[`${judgeLabel} - ${key}`] = value;
+    }
+  });
+  return merged;
 };
 
 export class AdminOrchestrationService {
@@ -269,6 +315,98 @@ export class AdminOrchestrationService {
 
   async publishFeedback(adminUserId: string, submissionIds: string[]) {
     const now = new Date().toISOString();
+
+    const { data: existingFeedbackRows, error: existingFeedbackError } = await supabase
+      .from('feedback')
+      .select('submission_id')
+      .in('submission_id', submissionIds)
+      .is('deleted_at', null);
+
+    if (existingFeedbackError) throw existingFeedbackError;
+
+    const existingFeedbackSubmissionIds = new Set(
+      (existingFeedbackRows ?? []).map((row) => (row as { submission_id: string }).submission_id),
+    );
+    const missingFeedbackSubmissionIds = submissionIds.filter(
+      (submissionId) => !existingFeedbackSubmissionIds.has(submissionId),
+    );
+
+    if (missingFeedbackSubmissionIds.length > 0) {
+      const [{ data: submissions, error: submissionsError }, { data: judgeScores, error: judgeScoresError }] =
+        await Promise.all([
+          supabase
+            .from('submissions')
+            .select('*, teams!inner(id,name,current_stage)')
+            .in('id', missingFeedbackSubmissionIds)
+            .is('deleted_at', null),
+          supabase
+            .from('judge_scores')
+            .select('*, judges(id,name,email)')
+            .in('submission_id', missingFeedbackSubmissionIds)
+            .is('deleted_at', null),
+        ]);
+
+      if (submissionsError) throw submissionsError;
+      if (judgeScoresError) throw judgeScoresError;
+
+      const submissionById = new Map(
+        ((submissions ?? []) as SubmissionForFeedback[]).map((submission) => [submission.id, submission]),
+      );
+      const scoresBySubmission = new Map<string, JudgeScoreForFeedback[]>();
+      for (const score of (judgeScores ?? []) as JudgeScoreForFeedback[]) {
+        scoresBySubmission.set(score.submission_id, [
+          ...(scoresBySubmission.get(score.submission_id) ?? []),
+          score,
+        ]);
+      }
+
+      const missingJudgeScores = missingFeedbackSubmissionIds.filter(
+        (submissionId) => (scoresBySubmission.get(submissionId) ?? []).length === 0,
+      );
+      if (missingJudgeScores.length > 0) {
+        throw AppError.validation('Cannot publish feedback for submissions without judge scores');
+      }
+
+      const feedbackPayload = missingFeedbackSubmissionIds.map((submissionId) => {
+        const submission = submissionById.get(submissionId);
+        const scores = scoresBySubmission.get(submissionId) ?? [];
+        const totalScoreValues = scores
+          .map((score) => score.total_score)
+          .filter((value): value is number => typeof value === 'number');
+        const totalScore =
+          totalScoreValues.length > 0
+            ? Number(
+                (
+                  totalScoreValues.reduce((sum, value) => sum + value, 0) /
+                  totalScoreValues.length
+                ).toFixed(2),
+              )
+            : null;
+        const firstScore = scores[0];
+        const evaluatorName =
+          scores.length === 1 && firstScore
+            ? firstScore.judges?.name ?? firstScore.judges?.email ?? 'PIDEC Judge'
+            : 'PIDEC Judges';
+        const outcome =
+          submission?.teams?.current_stage && submission.teams.current_stage > submission.stage
+            ? 'advanced'
+            : 'not_advanced';
+
+        return {
+          submission_id: submissionId,
+          scores: averageScoreMaps(scores),
+          comments: mergeJudgeComments(scores),
+          total_score: totalScore,
+          outcome,
+          entered_by_admin: adminUserId,
+          evaluator_name: evaluatorName,
+          evaluation_date: now.slice(0, 10),
+        };
+      });
+
+      const { error: insertFeedbackError } = await supabase.from('feedback').insert(feedbackPayload as never[]);
+      if (insertFeedbackError) throw insertFeedbackError;
+    }
 
     const [{ data: feedback, error: feedbackError }, { error: submissionStatusError }] =
       await Promise.all([
