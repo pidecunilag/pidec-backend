@@ -1,6 +1,7 @@
 import { type RequestHandler } from 'express';
 import { DEPARTMENTS } from '@pidec/shared';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
+import { verifyPassword } from '../../infrastructure/auth/password.js';
 import { getEmailService } from '../../infrastructure/email/resend-email-service.js';
 import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
 import { TokenRepository } from '../../domain/repositories/verification-token-repository.js';
@@ -8,6 +9,7 @@ import { AppError } from '../../shared/errors/app-error.js';
 import { env } from '../../shared/config/env.js';
 import { adminOrchestrationService } from '../../application/admin/admin-orchestration-service.js';
 import { adminExportService } from '../../application/admin/admin-export-service.js';
+import { launchStage1Results } from '../../scripts/oneoffs/launch-stage1-results.js';
 
 const SUBMISSION_BUCKET = 'submissions';
 
@@ -1591,6 +1593,33 @@ export const publishFeedback: RequestHandler = async (req, res, next) => {
     const { submissionIds } = req.body as { submissionIds: string[] };
     const data = await adminOrchestrationService.publishFeedback(req.user.id, submissionIds);
     res.status(200).json({ status: 'success', data: { feedback: data ?? [] } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const launchStage1ResultsFromAdmin: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.user) throw AppError.unauthenticated();
+
+    const { password } = req.body as { password: string };
+    const supabase = getSupabaseService() as any;
+    const { data: admin, error } = await supabase
+      .from('users')
+      .select('id,password_hash')
+      .eq('id', req.user.id)
+      .eq('role', 'admin')
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!admin?.password_hash) throw AppError.forbidden('Admin password could not be verified');
+
+    const validPassword = await verifyPassword(password, admin.password_hash);
+    if (!validPassword) throw AppError.forbidden('Invalid admin password');
+
+    const report = await launchStage1Results({ live: true });
+    res.status(200).json({ status: 'success', data: { report } });
   } catch (err) {
     next(err);
   }

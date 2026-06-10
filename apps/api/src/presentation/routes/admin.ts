@@ -60,6 +60,7 @@ import {
   deactivateJudge,
   enterFeedback,
   publishFeedback,
+  launchStage1ResultsFromAdmin,
   exportStudents,
   exportTeams,
   exportSubmissions,
@@ -89,6 +90,9 @@ const SubmissionFileParamsSchema = z.object({
   fileId: z.string().min(1),
 });
 const StudentParamsSchema = z.object({ userId: UuidSchema });
+const LaunchStage1ResultsSchema = z.object({
+  password: z.string().min(1, 'Admin password is required'),
+});
 
 const forceStudentRole: RequestHandler = (req, _res, next) => {
   req.query = { ...req.query, role: 'student' };
@@ -231,5 +235,6 @@ adminRouter.post(
   enterFeedback,
 );
 adminRouter.post('/feedback/publish', validate(PublishFeedbackSchema), publishFeedback);
+adminRouter.post('/stage1-results/launch', validate(LaunchStage1ResultsSchema), launchStage1ResultsFromAdmin);
 
 export { adminRouter };

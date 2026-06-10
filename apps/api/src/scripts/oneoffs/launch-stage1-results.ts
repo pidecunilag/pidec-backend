@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 
 const APP_URL = process.env.APP_URL ?? 'https://pidec.com.ng';
@@ -9,6 +11,7 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const logoUrl = `${APP_URL.replace(/\/$/, '')}/logos/Coloured%20Logo%20Black%20text%20Trans.png`;
 const feedbackUrl = `${APP_URL.replace(/\/$/, '')}/dashboard/feedback`;
+const stage2WhatsappUrl = 'https://chat.whatsapp.com/CuG3ogIQHtTDRSEwsFwlaC?mode=gi_t';
 
 const topTeams = [
   { rank: 1, department: 'Biomedical Engineering', team: 'HemoSense' },
@@ -59,12 +62,18 @@ const parseArgs = () => {
   const live = process.argv.includes('--live');
   const toArg = process.argv.find((arg) => arg.startsWith('--to='));
   const limitArg = process.argv.find((arg) => arg.startsWith('--limit='));
-  const to = toArg ? toArg.split('=')[1]?.trim().toLowerCase() : null;
+  const to = toArg ? (toArg.split('=')[1]?.trim().toLowerCase() || null) : null;
   const limit = limitArg ? Number(limitArg.split('=')[1]) : null;
   if (limit !== null && (!Number.isFinite(limit) || limit <= 0)) {
     throw new Error('Invalid --limit value');
   }
   return { live, to, limit };
+};
+
+type LaunchStage1ResultsOptions = {
+  live: boolean;
+  to?: string | null;
+  limit?: number | null;
 };
 
 const parseEmailAddress = (raw: string) => {
@@ -225,6 +234,14 @@ const renderLeadEmail = (recipientName: string, teamName: string) => {
               </td>
             </tr>
           </table>
+          <p style="margin:14px 0 0;font-size:16px;line-height:1.7;color:#5f3c6d;">We have also created a WhatsApp group for teams advancing to Stage 2. Please join the group and share the link with your team members so everyone receives the next-stage updates quickly.</p>
+          <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;">
+            <tr>
+              <td style="border-radius:999px;background:#8b3dff;">
+                <a href="${stage2WhatsappUrl}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;border-radius:999px;">Join Stage 2 WhatsApp group</a>
+              </td>
+            </tr>
+          </table>
           <p style="margin:14px 0 0;font-size:16px;line-height:1.7;color:#5f3c6d;">We will share further details soon on the next steps for Stage 2, including timelines, expectations, and what your team needs to prepare.</p>
           <p style="margin:14px 0 0;font-size:16px;line-height:1.7;color:#5f3c6d;">Congratulations once again to you and your team. Thank you for the work you have put into PIDEC 1.0 so far.</p>
           <p style="margin:24px 0 0;font-size:16px;line-height:1.7;color:#2a003b;font-weight:700;">Faisal Adams,<br />Chairperson, PIDEC 1.0</p>
@@ -242,6 +259,9 @@ This selection follows the review of Stage 1 submissions across participating de
 
 Your Stage 1 review has been published on your dashboard. Please sign in to view the feedback and scores from the review process:
 ${feedbackUrl}
+
+We have also created a WhatsApp group for teams advancing to Stage 2. Please join the group and share the link with your team members so everyone receives the next-stage updates quickly:
+${stage2WhatsappUrl}
 
 We will share further details soon on the next steps for Stage 2, including timelines, expectations, and what your team needs to prepare.
 
@@ -328,8 +348,7 @@ const mergeJudgeComments = (scores: JudgeScoreRecord[]) => {
   return merged;
 };
 
-const main = async () => {
-  const { live, to, limit } = parseArgs();
+export const launchStage1Results = async ({ live, to = null, limit = null }: LaunchStage1ResultsOptions) => {
   const shouldMutatePlatform = live && !to;
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) throw new Error('Supabase service env is not set');
 
@@ -598,16 +617,26 @@ const main = async () => {
     leadFailed,
   };
 
+  return report;
+};
+
+const main = async () => {
+  const report = await launchStage1Results(parseArgs());
   // eslint-disable-next-line no-console
   console.log(JSON.stringify(report, null, 2));
-
-  if (generalFailed.length > 0 || leadFailed.length > 0) {
+  if (report.totals.liveGeneralFailed > 0 || report.totals.liveLeadFailed > 0) {
     process.exitCode = 1;
   }
 };
 
-main().catch((error) => {
+const isDirectRun = process.argv[1]
+  ? path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main().catch((error) => {
   // eslint-disable-next-line no-console
-  console.error('Stage 1 results launch failed:', error);
-  process.exitCode = 1;
-});
+    console.error('Stage 1 results launch failed:', error);
+    process.exitCode = 1;
+  });
+}
