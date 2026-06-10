@@ -499,12 +499,25 @@ export const launchStage1Results = async ({ live, to = null, limit = null }: Lau
   const leadFailed: Array<{ email: string; teamName: string; error: string }> = [];
 
   if (shouldMutatePlatform) {
+    const { error: resetRepresentativeError } = await supabase
+      .from('teams')
+      .update({ is_stage_2_representative: false } as never)
+      .eq('edition_id', edition.id)
+      .is('deleted_at', null);
+    if (resetRepresentativeError) throw resetRepresentativeError;
+
     const { error: promoteError } = await supabase
       .from('teams')
-      .update({ current_stage: 2 })
+      .update({ current_stage: 2, is_stage_2_representative: true } as never)
       .in('id', topTeamIds)
       .lt('current_stage', 2);
     if (promoteError) throw promoteError;
+
+    const { error: representativeError } = await supabase
+      .from('teams')
+      .update({ is_stage_2_representative: true } as never)
+      .in('id', topTeamIds);
+    if (representativeError) throw representativeError;
 
     const { data: existingFeedback, error: existingFeedbackError } = await supabase
       .from('feedback')

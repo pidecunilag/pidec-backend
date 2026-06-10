@@ -236,6 +236,12 @@ export class SubmissionApplicationService {
       throw new AppError(ERROR_CODES.ONLY_LEADER, 'Only team leader can submit');
     }
     if (team.status !== 'active') throw AppError.forbidden('Team is not active');
+    if (team.current_stage < expectedStage) {
+      throw new AppError(
+        ERROR_CODES.STAGE_CLOSED,
+        `Your team has not advanced to Stage ${expectedStage}`,
+      );
+    }
     if (!edition.submission_window_open) {
       throw new AppError(ERROR_CODES.SUBMISSION_WINDOW_CLOSED, 'Submission window is closed');
     }
