@@ -11,6 +11,7 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const logoUrl = `${APP_URL.replace(/\/$/, '')}/logos/Coloured%20Logo%20Black%20text%20Trans.png`;
 const feedbackUrl = `${APP_URL.replace(/\/$/, '')}/dashboard/feedback`;
+const stage2CongratsImageUrl = `${APP_URL.replace(/\/$/, '')}/Stage-2-Congrats.png`;
 const stage2WhatsappUrl = 'https://chat.whatsapp.com/CuG3ogIQHtTDRSEwsFwlaC?mode=gi_t';
 
 const topTeams = [
@@ -222,6 +223,7 @@ const renderLeadEmail = (recipientName: string, teamName: string) => {
       <tr>
         <td style="padding:16px 34px 34px;">
           <h1 style="margin:0;font-size:30px;line-height:1.25;color:#2a003b;">Congratulations, your team is advancing to Stage 2</h1>
+          <img src="${stage2CongratsImageUrl}" width="612" alt="Congratulations on advancing to Stage 2" style="display:block;width:100%;max-width:612px;height:auto;margin:22px 0 4px;border:0;border-radius:18px;" />
           <p style="margin:18px 0 0;font-size:16px;line-height:1.7;color:#5f3c6d;">Hi ${escapeHtml(getFirstName(recipientName))},</p>
           <p style="margin:14px 0 0;font-size:16px;line-height:1.7;color:#5f3c6d;">Congratulations to you and your team.</p>
           <p style="margin:14px 0 0;font-size:16px;line-height:1.7;color:#5f3c6d;">Your team, <strong style="color:#2a003b;">${escapeHtml(teamName)}</strong>, has been selected as one of the Top 10 teams advancing to Stage 2 of PIDEC 1.0.</p>
