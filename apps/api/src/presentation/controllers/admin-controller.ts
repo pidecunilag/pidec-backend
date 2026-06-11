@@ -7,6 +7,10 @@ import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
 import { TokenRepository } from '../../domain/repositories/verification-token-repository.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { env } from '../../shared/config/env.js';
+import {
+  excludeInternalTestTeams,
+  excludeInternalTestTeamUsers,
+} from '../../shared/internal-test-teams.js';
 import { adminOrchestrationService } from '../../application/admin/admin-orchestration-service.js';
 import { adminExportService } from '../../application/admin/admin-export-service.js';
 import { launchStage1Results } from '../../scripts/oneoffs/launch-stage1-results.js';
@@ -125,12 +129,22 @@ const readCount = async (query: any): Promise<number> => {
   return count ?? 0;
 };
 
-const getUsersCount = async (supabase: any, filters: AnalyticsQuery, extra: Record<string, unknown> = {}) => {
-  let query = supabase
-    .from('users')
-    .select('id', { count: 'exact', head: true })
-    .eq('role', 'student')
-    .is('deleted_at', null);
+const excludeInternalUsers = excludeInternalTestTeamUsers;
+const excludeInternalTeams = excludeInternalTestTeams;
+const excludeInternalSubmissionTeams = (query: any) => excludeInternalTestTeams(query, 'team_id');
+
+const getUsersCount = async (
+  supabase: any,
+  filters: AnalyticsQuery,
+  extra: Record<string, unknown> = {},
+) => {
+  let query = excludeInternalUsers(
+    supabase
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'student')
+      .is('deleted_at', null),
+  );
 
   if (filters.department) query = query.eq('department', filters.department);
   for (const [key, value] of Object.entries(extra)) {
@@ -147,23 +161,32 @@ const getUsersCount = async (supabase: any, filters: AnalyticsQuery, extra: Reco
 };
 
 const getUsersWithTeamCount = async (supabase: any, filters: AnalyticsQuery) => {
-  let query = supabase
-    .from('users')
-    .select('id', { count: 'exact', head: true })
-    .eq('role', 'student')
-    .not('team_id', 'is', null)
-    .is('deleted_at', null);
+  let query = excludeInternalUsers(
+    supabase
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'student')
+      .not('team_id', 'is', null)
+      .is('deleted_at', null),
+  );
 
   if (filters.department) query = query.eq('department', filters.department);
   return readCount(applyAnalyticsDateRange(query, 'created_at', filters));
 };
 
-const getTeamsCount = async (supabase: any, editionId: string, filters: AnalyticsQuery, extra: Record<string, unknown> = {}) => {
-  let query = supabase
-    .from('teams')
-    .select('id', { count: 'exact', head: true })
-    .eq('edition_id', editionId)
-    .is('deleted_at', null);
+const getTeamsCount = async (
+  supabase: any,
+  editionId: string,
+  filters: AnalyticsQuery,
+  extra: Record<string, unknown> = {},
+) => {
+  let query = excludeInternalTeams(
+    supabase
+      .from('teams')
+      .select('id', { count: 'exact', head: true })
+      .eq('edition_id', editionId)
+      .is('deleted_at', null),
+  );
 
   if (filters.department) query = query.eq('department', filters.department);
   for (const [key, value] of Object.entries(extra)) {
@@ -181,10 +204,11 @@ const getSubmissionsCount = async (
 ) => {
   let query = supabase
     .from('submissions')
-    .select(filters.department ? 'id,teams!inner(department)' : 'id', { count: 'exact', head: true })
+    .select('id,team_id,teams!inner(department)', { count: 'exact', head: true })
     .eq('edition_id', editionId)
     .is('deleted_at', null);
 
+  query = excludeInternalSubmissionTeams(query);
   if (filters.department) query = query.eq('teams.department', filters.department);
   if (filters.stage) query = query.eq('stage', filters.stage);
   for (const [key, value] of Object.entries(extra)) {
@@ -202,11 +226,12 @@ const getSubmissionsByDepartmentCount = async (
 ) => {
   let query = supabase
     .from('submissions')
-    .select('id,teams!inner(department)', { count: 'exact', head: true })
+    .select('id,team_id,teams!inner(department)', { count: 'exact', head: true })
     .eq('edition_id', editionId)
     .eq('teams.department', department)
     .is('deleted_at', null);
 
+  query = excludeInternalSubmissionTeams(query);
   if (filters.stage) query = query.eq('stage', filters.stage);
 
   return readCount(applyAnalyticsDateRange(query, 'submitted_at', filters));
@@ -289,7 +314,10 @@ const incrementByDate = (map: Map<string, number>, value?: string | null) => {
   map.set(date, (map.get(date) ?? 0) + 1);
 };
 
-const mergeTrendMaps = (registrations: Map<string, number>, submissions: Map<string, number>): TrendDatum[] => {
+const mergeTrendMaps = (
+  registrations: Map<string, number>,
+  submissions: Map<string, number>,
+): TrendDatum[] => {
   const dates = Array.from(new Set([...registrations.keys(), ...submissions.keys()])).sort();
   return dates.map((date) => ({
     date,
@@ -300,32 +328,26 @@ const mergeTrendMaps = (registrations: Map<string, number>, submissions: Map<str
 
 export const listUsers: RequestHandler = async (req, res, next) => {
   try {
-    const {
-      q,
-      role,
-      verificationStatus,
-      department,
-      hasTeam,
-      isSuspended,
-      cursor,
-      limit,
-      offset,
-    } = req.query as any;
+    const { q, role, verificationStatus, department, hasTeam, isSuspended, cursor, limit, offset } =
+      req.query as any;
     const limitNumber = Number(limit ?? 20);
     const offsetNumber = Number(offset ?? 0);
 
     const supabase = getSupabaseService() as any;
-    let query = supabase
-      .from('users')
-      .select('*', { count: cursor ? undefined : 'exact' })
-      .is('deleted_at', null);
+    let query = excludeInternalUsers(
+      supabase
+        .from('users')
+        .select('*', { count: cursor ? undefined : 'exact' })
+        .is('deleted_at', null),
+    );
 
     if (q) query = query.or(`name.ilike.%${q}%,email.ilike.%${q}%,matric_number.ilike.%${q}%`);
     if (role) query = query.eq('role', role);
     if (verificationStatus) query = query.eq('verification_status', verificationStatus);
     if (department) query = query.eq('department', department);
     if (typeof isSuspended === 'boolean') query = query.eq('is_suspended', isSuspended);
-    if (typeof hasTeam === 'boolean') query = hasTeam ? query.not('team_id', 'is', null) : query.is('team_id', null);
+    if (typeof hasTeam === 'boolean')
+      query = hasTeam ? query.not('team_id', 'is', null) : query.is('team_id', null);
 
     query = query.order('created_at', { ascending: false });
     if (cursor) {
@@ -363,7 +385,7 @@ export const listUsers: RequestHandler = async (req, res, next) => {
           total: count ?? 0,
           limit: limitNumber,
           offset: offsetNumber,
-          hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+          hasMore: offsetNumber + limitNumber < (count ?? 0),
         },
       },
     });
@@ -381,11 +403,15 @@ export const listTeams: RequestHandler = async (req, res, next) => {
     const supabase = getSupabaseService() as any;
     const edition = await getActiveEdition();
 
-    let query = supabase
-      .from('teams')
-      .select('*, leader:users!teams_leader_id_fkey(id,name,email)', { count: cursor ? undefined : 'exact' })
-      .eq('edition_id', edition.id)
-      .is('deleted_at', null);
+    let query = excludeInternalTeams(
+      supabase
+        .from('teams')
+        .select('*, leader:users!teams_leader_id_fkey(id,name,email)', {
+          count: cursor ? undefined : 'exact',
+        })
+        .eq('edition_id', edition.id)
+        .is('deleted_at', null),
+    );
 
     if (q) query = query.ilike('name', `%${q}%`);
     if (department) query = query.eq('department', department);
@@ -445,7 +471,7 @@ export const listTeams: RequestHandler = async (req, res, next) => {
           total: count ?? 0,
           limit: limitNumber,
           offset: offsetNumber,
-          hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+          hasMore: offsetNumber + limitNumber < (count ?? 0),
         },
       },
     });
@@ -464,13 +490,16 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
     const supabase = getSupabaseService() as any;
     const edition = await getActiveEdition();
 
-    let query = supabase
-      .from('submissions')
-      .select('*, teams!inner(id,name,department,status,current_stage), users!submissions_submitted_by_fkey(id,name,email)', {
-        count: cursor ? undefined : 'exact',
-      })
-      .eq('edition_id', edition.id)
-      .is('deleted_at', null);
+    let query = excludeInternalSubmissionTeams(
+      supabase
+        .from('submissions')
+        .select(
+          '*, teams!inner(id,name,department,status,current_stage), users!submissions_submitted_by_fkey(id,name,email)',
+          { count: cursor ? undefined : 'exact' },
+        )
+        .eq('edition_id', edition.id)
+        .is('deleted_at', null),
+    );
 
     if (Number.isInteger(stageNumber)) query = query.eq('stage', stageNumber);
     if (status) query = query.eq('status', status);
@@ -516,7 +545,7 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
           total: count ?? 0,
           limit: limitNumber,
           offset: offsetNumber,
-          hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+          hasMore: offsetNumber + limitNumber < (count ?? 0),
         },
       },
     });
@@ -620,7 +649,7 @@ export const listJudges: RequestHandler = async (req, res, next) => {
           total: count ?? 0,
           limit: limitNumber,
           offset: offsetNumber,
-          hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+          hasMore: offsetNumber + limitNumber < (count ?? 0),
         },
       },
     });
@@ -681,7 +710,7 @@ export const listTokens: RequestHandler = async (req, res, next) => {
           total: count ?? 0,
           limit: limitNumber,
           offset: offsetNumber,
-          hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+          hasMore: offsetNumber + limitNumber < (count ?? 0),
         },
       },
     });
@@ -746,7 +775,7 @@ export const listVerificationQueue: RequestHandler = async (req, res, next) => {
           total: count ?? 0,
           limit: limitNumber,
           offset: offsetNumber,
-          hasMore: (offsetNumber + limitNumber) < (count ?? 0),
+          hasMore: offsetNumber + limitNumber < (count ?? 0),
         },
       },
     });
@@ -938,7 +967,9 @@ export const getAnalytics: RequestHandler = async (req, res, next) => {
     const filters = req.query as AnalyticsQuery;
     const supabase = getSupabaseService() as any;
     const edition = await getActiveEdition();
-    const selectedStage = filters.stage ?? (edition.active_stage && edition.active_stage > 0 ? edition.active_stage : 1);
+    const selectedStage =
+      filters.stage ??
+      (edition.active_stage && edition.active_stage > 0 ? edition.active_stage : 1);
 
     const [
       totalRegistrations,
@@ -1037,36 +1068,42 @@ export const getAnalytics: RequestHandler = async (req, res, next) => {
 
     const [registrationTrendRows, submissionTrendRows, teamMemberRows] = await Promise.all([
       fetchAnalyticsRows<{ created_at: string }>((offset, limit) => {
-        let query = supabase
-          .from('users')
-          .select('created_at')
-          .eq('role', 'student')
-          .is('deleted_at', null)
-          .order('created_at', { ascending: true })
-          .range(offset, offset + limit - 1);
+        let query = excludeInternalUsers(
+          supabase
+            .from('users')
+            .select('created_at')
+            .eq('role', 'student')
+            .is('deleted_at', null)
+            .order('created_at', { ascending: true })
+            .range(offset, offset + limit - 1),
+        );
         if (filters.department) query = query.eq('department', filters.department);
         return applyAnalyticsDateRange(query, 'created_at', filters);
       }),
       fetchAnalyticsRows<{ submitted_at: string }>((offset, limit) => {
-        let query = supabase
-          .from('submissions')
-          .select(filters.department ? 'submitted_at,teams!inner(department)' : 'submitted_at')
-          .eq('edition_id', edition.id)
-          .is('deleted_at', null)
-          .order('submitted_at', { ascending: true })
-          .range(offset, offset + limit - 1);
+        let query = excludeInternalSubmissionTeams(
+          supabase
+            .from('submissions')
+            .select('submitted_at,team_id,teams!inner(department)')
+            .eq('edition_id', edition.id)
+            .is('deleted_at', null)
+            .order('submitted_at', { ascending: true })
+            .range(offset, offset + limit - 1),
+        );
         if (filters.department) query = query.eq('teams.department', filters.department);
         if (filters.stage) query = query.eq('stage', filters.stage);
         return applyAnalyticsDateRange(query, 'submitted_at', filters);
       }),
       fetchAnalyticsRows<{ team_id: string | null }>((offset, limit) => {
-        let query = supabase
-          .from('users')
-          .select('team_id')
-          .eq('role', 'student')
-          .not('team_id', 'is', null)
-          .is('deleted_at', null)
-          .range(offset, offset + limit - 1);
+        let query = excludeInternalUsers(
+          supabase
+            .from('users')
+            .select('team_id')
+            .eq('role', 'student')
+            .not('team_id', 'is', null)
+            .is('deleted_at', null)
+            .range(offset, offset + limit - 1),
+        );
         if (filters.department) query = query.eq('department', filters.department);
         return query;
       }),
@@ -1083,9 +1120,15 @@ export const getAnalytics: RequestHandler = async (req, res, next) => {
       memberCountByTeam.set(row.team_id, (memberCountByTeam.get(row.team_id) ?? 0) + 1);
     }
 
-    const stageEligibleTeams = await getTeamsCount(supabase, edition.id, filters, { status: 'active' });
-    const stageSubmissions = await getSubmissionsCount(supabase, edition.id, { ...filters, stage: selectedStage });
-    const completionRate = stageEligibleTeams > 0 ? Math.round((stageSubmissions / stageEligibleTeams) * 100) : 0;
+    const stageEligibleTeams = await getTeamsCount(supabase, edition.id, filters, {
+      status: 'active',
+    });
+    const stageSubmissions = await getSubmissionsCount(supabase, edition.id, {
+      ...filters,
+      stage: selectedStage,
+    });
+    const completionRate =
+      stageEligibleTeams > 0 ? Math.round((stageSubmissions / stageEligibleTeams) * 100) : 0;
     const averageTeamSize =
       memberCountByTeam.size > 0
         ? Number(
@@ -1097,9 +1140,12 @@ export const getAnalytics: RequestHandler = async (req, res, next) => {
         : 0;
 
     const departmentLeaderboard = DEPARTMENTS.map((department) => {
-      const registrations = registrationsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
-      const teams = teamsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
-      const submissions = submissionsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
+      const registrations =
+        registrationsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
+      const teams =
+        teamsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
+      const submissions =
+        submissionsByDepartment.find((item: CountDatum) => item.label === department)?.value ?? 0;
       return {
         department,
         registrations,
@@ -1174,13 +1220,19 @@ export const getOverview: RequestHandler = async (_req, res, next) => {
     const edition = await getActiveEdition();
 
     const [usersRes, teamsRes, submissionsRes, judgesRes] = await Promise.all([
-      supabase.from('users').select('id', { count: 'exact', head: true }).is('deleted_at', null),
-      supabase.from('teams').select('id', { count: 'exact', head: true }).is('deleted_at', null),
-      supabase
-        .from('submissions')
-        .select('id', { count: 'exact', head: true })
-        .eq('edition_id', edition.id)
-        .is('deleted_at', null),
+      excludeInternalUsers(
+        supabase.from('users').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      ),
+      excludeInternalTeams(
+        supabase.from('teams').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      ),
+      excludeInternalSubmissionTeams(
+        supabase
+          .from('submissions')
+          .select('id,team_id', { count: 'exact', head: true })
+          .eq('edition_id', edition.id)
+          .is('deleted_at', null),
+      ),
       supabase
         .from('judges')
         .select('id', { count: 'exact', head: true })
@@ -1480,7 +1532,12 @@ export const applyTeamAction: RequestHandler = async (req, res, next) => {
       ...(reason !== undefined ? { reason } : {}),
       ...(atStage !== undefined ? { atStage } : {}),
     });
-    return res.status(200).json({ status: 'success', data: result.team ? { team: result.team } : { unlocked: result.unlocked } });
+    return res
+      .status(200)
+      .json({
+        status: 'success',
+        data: result.team ? { team: result.team } : { unlocked: result.unlocked },
+      });
   } catch (err) {
     next(err);
   }
@@ -1491,7 +1548,11 @@ export const generateDepartmentToken: RequestHandler = async (req, res, next) =>
     if (!req.user) throw AppError.unauthenticated();
 
     const { department, expiresAt } = req.body as { department: string; expiresAt?: string };
-    const data = await adminOrchestrationService.generateDepartmentToken(req.user.id, department, expiresAt);
+    const data = await adminOrchestrationService.generateDepartmentToken(
+      req.user.id,
+      department,
+      expiresAt,
+    );
     res.status(201).json({ status: 'success', data: { token: data } });
   } catch (err) {
     next(err);
@@ -1503,7 +1564,11 @@ export const regenerateDepartmentToken: RequestHandler = async (req, res, next) 
     if (!req.user) throw AppError.unauthenticated();
 
     const { department, expiresAt } = req.body as { department: string; expiresAt?: string };
-    const data = await adminOrchestrationService.generateDepartmentToken(req.user.id, department, expiresAt);
+    const data = await adminOrchestrationService.generateDepartmentToken(
+      req.user.id,
+      department,
+      expiresAt,
+    );
     res.status(201).json({ status: 'success', data: { token: data } });
   } catch (err) {
     next(err);

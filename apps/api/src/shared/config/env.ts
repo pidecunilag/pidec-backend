@@ -9,7 +9,11 @@ import { z } from 'zod';
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  API_PORT: z.coerce.number().int().positive().default(process.env.PORT ? parseInt(process.env.PORT) : 4000),
+  API_PORT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(process.env.PORT ? parseInt(process.env.PORT) : 4000),
   API_HOST: z.string().min(1).default('0.0.0.0'),
   API_PUBLIC_URL: z.string().url().optional(),
   KEEP_ALIVE_URL: z.string().url().optional(),
@@ -36,6 +40,7 @@ const EnvSchema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   JUDGE_EXCLUDED_TEAM_IDS: z.string().optional(),
+  INTERNAL_TEST_TEAM_IDS: z.string().optional(),
 
   RATE_LIMIT_REGISTRATION_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
   RATE_LIMIT_REGISTRATION_MAX: z.coerce.number().int().positive().default(5),

@@ -2,6 +2,11 @@ import type { Response } from 'express';
 import type { Database } from '@pidec/db-types';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
 import { platformReadService } from '../shared/platform-read-service.js';
+import {
+  excludeInternalTestTeams,
+  excludeInternalTestTeamUsers,
+  isInternalTestTeamId,
+} from '../../shared/internal-test-teams.js';
 
 type UserRow = Database['public']['Tables']['users']['Row'];
 type TeamExportRow = Database['public']['Tables']['teams']['Row'] & {
@@ -33,7 +38,9 @@ const escapeCsvCell = (value: unknown): string => {
 
 const toCsv = (rows: Array<Record<string, unknown>>, columns: string[]): string => {
   const header = columns.join(',');
-  const body = rows.map((row) => columns.map((column) => escapeCsvCell(row[column])).join(',')).join('\n');
+  const body = rows
+    .map((row) => columns.map((column) => escapeCsvCell(row[column])).join(','))
+    .join('\n');
   return `${header}\n${body}\n`;
 };
 
@@ -51,33 +58,56 @@ const sendCsv = (
 export class AdminExportService {
   async exportStudents(res: Response): Promise<void> {
     const edition = await platformReadService.getActiveEdition();
-    const { data, error } = await supabase
-      .from('users')
-      .select(
-        'id,name,email,matric_number,department,level,verification_status,verification_method,verification_timestamp,is_suspended,team_id,role,created_at',
-      )
-      .eq('role', 'student')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true });
+    const query = excludeInternalTestTeamUsers(
+      supabase
+        .from('users')
+        .select(
+          'id,name,email,matric_number,department,level,verification_status,verification_method,verification_timestamp,is_suspended,team_id,role,created_at',
+        )
+        .eq('role', 'student')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true }),
+    );
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    const rows = (data ?? []).map((user: Pick<UserRow, 'id' | 'name' | 'email' | 'matric_number' | 'department' | 'level' | 'verification_status' | 'verification_method' | 'verification_timestamp' | 'is_suspended' | 'team_id' | 'role' | 'created_at'>) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      matric_number: user.matric_number,
-      department: user.department,
-      level: user.level,
-      verification_status: user.verification_status,
-      verification_method: user.verification_method ?? '',
-      verification_timestamp: user.verification_timestamp ?? '',
-      is_suspended: user.is_suspended,
-      team_id: user.team_id ?? '',
-      role: user.role,
-      created_at: user.created_at,
-      edition_id: edition.id,
-    }));
+    const rows = (data ?? []).map(
+      (
+        user: Pick<
+          UserRow,
+          | 'id'
+          | 'name'
+          | 'email'
+          | 'matric_number'
+          | 'department'
+          | 'level'
+          | 'verification_status'
+          | 'verification_method'
+          | 'verification_timestamp'
+          | 'is_suspended'
+          | 'team_id'
+          | 'role'
+          | 'created_at'
+        >,
+      ) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        matric_number: user.matric_number,
+        department: user.department,
+        level: user.level,
+        verification_status: user.verification_status,
+        verification_method: user.verification_method ?? '',
+        verification_timestamp: user.verification_timestamp ?? '',
+        is_suspended: user.is_suspended,
+        team_id: user.team_id ?? '',
+        role: user.role,
+        created_at: user.created_at,
+        edition_id: edition.id,
+      }),
+    );
 
     sendCsv(res, `pidec-students-${edition.id}.csv`, rows, [
       'id',
@@ -99,12 +129,18 @@ export class AdminExportService {
 
   async exportTeams(res: Response): Promise<void> {
     const edition = await platformReadService.getActiveEdition();
-    const { data, error } = await supabase
-      .from('teams')
-      .select('*, leader:users!teams_leader_id_fkey(id,name,email), submissions(id,stage,status,submitted_at)')
-      .eq('edition_id', edition.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true });
+    const query = excludeInternalTestTeams(
+      supabase
+        .from('teams')
+        .select(
+          '*, leader:users!teams_leader_id_fkey(id,name,email), submissions(id,stage,status,submitted_at)',
+        )
+        .eq('edition_id', edition.id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true }),
+    );
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -172,12 +208,17 @@ export class AdminExportService {
 
   async exportSubmissions(res: Response, stage?: number): Promise<void> {
     const edition = await platformReadService.getActiveEdition();
-    let query = supabase
-      .from('submissions')
-      .select('*, teams!inner(id,name,department,leader_id), users!submissions_submitted_by_fkey(id,name,email)')
-      .eq('edition_id', edition.id)
-      .is('deleted_at', null)
-      .order('submitted_at', { ascending: true });
+    let query = excludeInternalTestTeams(
+      supabase
+        .from('submissions')
+        .select(
+          '*, teams!inner(id,name,department,leader_id), users!submissions_submitted_by_fkey(id,name,email)',
+        )
+        .eq('edition_id', edition.id)
+        .is('deleted_at', null)
+        .order('submitted_at', { ascending: true }),
+      'team_id',
+    );
 
     if (typeof stage === 'number') query = query.eq('stage', stage);
 
@@ -243,24 +284,26 @@ export class AdminExportService {
 
     if (error) throw error;
 
-    const rows = ((data ?? []) as JudgeScoreExportRow[]).map((score) => ({
-      id: score.id,
-      submission_id: score.submission_id,
-      team_id: score.submissions?.team_id ?? '',
-      team_name: score.submissions?.teams?.name ?? '',
-      team_department: score.submissions?.teams?.department ?? '',
-      submission_stage: score.submissions?.stage ?? '',
-      judge_id: score.judge_id,
-      judge_name: score.judges?.name ?? '',
-      judge_email: score.judges?.email ?? '',
-      judge_stage_scope: score.judges?.stage_scope ?? '',
-      scores: score.scores,
-      comments: score.comments,
-      total_score: score.total_score ?? '',
-      is_representative_pick: score.is_representative_pick,
-      submitted_at: score.submitted_at,
-      edition_id: edition.id,
-    }));
+    const rows = ((data ?? []) as JudgeScoreExportRow[])
+      .filter((score) => !isInternalTestTeamId(score.submissions?.team_id))
+      .map((score) => ({
+        id: score.id,
+        submission_id: score.submission_id,
+        team_id: score.submissions?.team_id ?? '',
+        team_name: score.submissions?.teams?.name ?? '',
+        team_department: score.submissions?.teams?.department ?? '',
+        submission_stage: score.submissions?.stage ?? '',
+        judge_id: score.judge_id,
+        judge_name: score.judges?.name ?? '',
+        judge_email: score.judges?.email ?? '',
+        judge_stage_scope: score.judges?.stage_scope ?? '',
+        scores: score.scores,
+        comments: score.comments,
+        total_score: score.total_score ?? '',
+        is_representative_pick: score.is_representative_pick,
+        submitted_at: score.submitted_at,
+        edition_id: edition.id,
+      }));
 
     sendCsv(res, `pidec-scores-${edition.id}.csv`, rows, [
       'id',

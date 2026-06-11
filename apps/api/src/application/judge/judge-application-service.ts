@@ -1,19 +1,18 @@
 import type { Database } from '@pidec/db-types';
 import { getSupabaseService } from '../../infrastructure/db/supabase.js';
-import { env } from '../../shared/config/env.js';
 import { AppError } from '../../shared/errors/app-error.js';
+import { isInternalTestTeamId } from '../../shared/internal-test-teams.js';
 import { platformReadService } from '../shared/platform-read-service.js';
 
 const SUBMISSION_BUCKET = 'submissions';
-const JUDGE_EXCLUDED_TEAM_IDS = new Set(
-  (env.JUDGE_EXCLUDED_TEAM_IDS ?? '')
-    .split(',')
-    .map((teamId) => teamId.trim())
-    .filter(Boolean),
-);
 
 type SubmissionWithDepartment = Database['public']['Tables']['submissions']['Row'] & {
-  teams: { id: string; department: string; name?: string | null; status?: string | null } | null;
+  teams: {
+    id: string;
+    department: string;
+    name?: string | null;
+    status?: string | null;
+  } | null;
   users?: { id: string; name: string; email: string } | null;
 };
 
@@ -66,7 +65,9 @@ export class JudgeApplicationService {
 
     const { data, error } = await this.supabase
       .from('submissions')
-      .select('*, teams!inner(id,name,department,status), users!submissions_submitted_by_fkey(id,name,email)')
+      .select(
+        '*, teams!inner(id,name,department,status), users!submissions_submitted_by_fkey(id,name,email)',
+      )
       .eq('edition_id', edition.id)
       .eq('stage', requestedStage)
       .is('deleted_at', null)
@@ -121,7 +122,9 @@ export class JudgeApplicationService {
     }, 0);
 
     const comments = Object.fromEntries(
-      Object.entries(payload.comments ?? {}).filter(([, value]) => typeof value === 'string' && value.trim().length > 0),
+      Object.entries(payload.comments ?? {}).filter(
+        ([, value]) => typeof value === 'string' && value.trim().length > 0,
+      ),
     );
 
     return this.upsertJudgeScore(submissionId, judgeId, {
@@ -182,7 +185,11 @@ export class JudgeApplicationService {
     const numericValues = Object.values(scores);
     const totalScore =
       numericValues.length > 0
-        ? Number((numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length).toFixed(2))
+        ? Number(
+            (numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length).toFixed(
+              2,
+            ),
+          )
         : null;
 
     return this.upsertJudgeScore(submissionId, judgeId, {
@@ -244,7 +251,7 @@ export class JudgeApplicationService {
 
   private isExcludedTeamSubmission(submission: SubmissionWithDepartment) {
     const teamId = submission.teams?.id;
-    return Boolean(teamId && JUDGE_EXCLUDED_TEAM_IDS.has(teamId));
+    return isInternalTestTeamId(teamId);
   }
 
   private getStoredFiles(files: unknown): StoredSubmissionFile[] {
