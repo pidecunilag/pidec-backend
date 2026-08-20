@@ -92,6 +92,15 @@ export interface JudgeInvitePayload {
   expiresIn: string;
 }
 
+export interface FinaleRegistrationConfirmedPayload {
+  recipientName: string;
+  registrationNumber: string;
+  eventDate: string;
+  eventVenue: string;
+  finaleUrl: string;
+  whatsappUrl: string;
+}
+
 export interface IEmailService {
   sendVerificationApproved(
     to: EmailRecipient,
@@ -126,4 +135,8 @@ export interface IEmailService {
   ): Promise<EmailDispatchResult>;
   sendPasswordReset(to: EmailRecipient, p: PasswordResetPayload): Promise<EmailDispatchResult>;
   sendJudgeInvite(to: EmailRecipient, p: JudgeInvitePayload): Promise<EmailDispatchResult>;
+  sendFinaleRegistrationConfirmed(
+    to: EmailRecipient,
+    p: FinaleRegistrationConfirmedPayload,
+  ): Promise<EmailDispatchResult>;
 }

@@ -59,7 +59,9 @@ export type DbAdminLogAction =
   | 'signup_toggle'
   | 'team_lock'
   | 'judge_create'
-  | 'judge_deactivate';
+  | 'judge_deactivate'
+  | 'finale_admit'
+  | 'finale_unadmit';
 
 // ── Row types ──────────────────────────────────────────────────────────────
 export interface DbEdition {
@@ -287,6 +289,18 @@ export interface DbAdminLog {
   created_at: string;
 }
 
+export interface DbFinaleRegistration {
+  id: string;
+  registration_number: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  admitted_at: string | null;
+  admitted_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Insert / Update helpers ────────────────────────────────────────────────
 type WithDefaults<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 
@@ -452,6 +466,15 @@ export interface Database {
           target_type: string;
         };
         Update: never;
+      };
+      finale_registrations: {
+        Row: DbFinaleRegistration;
+        Insert: Partial<DbFinaleRegistration> & {
+          full_name: string;
+          email: string;
+          phone: string;
+        };
+        Update: Partial<Pick<DbFinaleRegistration, 'admitted_at' | 'admitted_by' | 'updated_at'>>;
       };
     };
     Views: Record<string, never>;

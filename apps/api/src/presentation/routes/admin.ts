@@ -28,6 +28,9 @@ import {
   CreateLandingFaqSchema,
   UpdateLandingFaqSchema,
   UuidSchema,
+  AdminFinaleRegistrationsQuerySchema,
+  FinaleAdmissionSchema,
+  FinaleRegistrationParamsSchema,
 } from '@pidec/shared';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -80,6 +83,11 @@ import {
   updateFaq,
   deleteFaq,
 } from '../controllers/landing-content-controller.js';
+import {
+  exportFinaleRegistrations,
+  listFinaleRegistrations,
+  setFinaleAdmission,
+} from '../controllers/finale-controller.js';
 
 const UserParamsSchema = z.object({ userId: UuidSchema });
 const TeamParamsSchema = z.object({ teamId: UuidSchema });
@@ -114,6 +122,18 @@ const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole('admin'));
 
 adminRouter.get('/overview', getOverview);
+adminRouter.get(
+  '/finale/registrations',
+  validate(AdminFinaleRegistrationsQuerySchema, 'query'),
+  listFinaleRegistrations,
+);
+adminRouter.get('/finale/registrations/export', exportFinaleRegistrations);
+adminRouter.patch(
+  '/finale/registrations/:registrationId/admission',
+  validate(FinaleRegistrationParamsSchema, 'params'),
+  validate(FinaleAdmissionSchema),
+  setFinaleAdmission,
+);
 adminRouter.get('/analytics', validate(AdminAnalyticsQuerySchema, 'query'), getAnalytics);
 adminRouter.get(
   '/verifications/flagged',

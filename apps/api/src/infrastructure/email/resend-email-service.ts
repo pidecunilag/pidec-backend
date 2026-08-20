@@ -5,6 +5,7 @@ import type {
   EmailDispatchResult,
   EmailRecipient,
   EmailVerificationPayload,
+  FinaleRegistrationConfirmedPayload,
   FeedbackPublishedPayload,
   IEmailService,
   JudgeInvitePayload,
@@ -21,6 +22,7 @@ import type {
 import { env } from '../../shared/config/env.js';
 import { logger } from '../../shared/logger/index.js';
 import { FeedbackPublishedEmail } from './templates/feedback-published.js';
+import { FinaleRegistrationConfirmedEmail } from './templates/finale-registration-confirmed.js';
 import { JudgeInviteEmail } from './templates/judge-invite.js';
 import { PasswordResetEmail } from './templates/password-reset-email.js';
 import { Stage1SubmissionReminderEmail } from './templates/stage1-submission-reminder.js';
@@ -232,6 +234,14 @@ export class ResendEmailService implements IEmailService {
 
   sendJudgeInvite(to: EmailRecipient, p: JudgeInvitePayload) {
     return this.dispatch(to, `PIDEC judge invitation for ${p.stageLabel}`, JudgeInviteEmail(p));
+  }
+
+  sendFinaleRegistrationConfirmed(to: EmailRecipient, p: FinaleRegistrationConfirmedPayload) {
+    return this.dispatch(
+      to,
+      `You're registered for the PIDEC 1.0 Grand Finale`,
+      FinaleRegistrationConfirmedEmail(p),
+    );
   }
 
   sendStage1PendingSubmissionReminder(
