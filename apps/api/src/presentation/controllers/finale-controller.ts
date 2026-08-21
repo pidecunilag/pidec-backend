@@ -7,6 +7,7 @@ import { AppError } from '../../shared/errors/app-error.js';
 import { env } from '../../shared/config/env.js';
 
 const EVENT_DATE = 'Friday, 28 August 2026';
+const EVENT_TIME = '9:00 AM';
 const EVENT_VENUE = 'J.F. Ajayi Auditorium, University of Lagos';
 const WHATSAPP_URL = 'https://chat.whatsapp.com/Fs4FQGkmTE48dAwt6fb4DY';
 
@@ -60,9 +61,13 @@ export const createFinaleRegistration: RequestHandler = async (req, res, next) =
         });
       }
       if (error.code === '23505' && details.includes('phone')) {
-        throw new AppError(ERROR_CODES.DUPLICATE_ENTRY, 'This phone number is already registered.', {
-          field: 'phone',
-        });
+        throw new AppError(
+          ERROR_CODES.DUPLICATE_ENTRY,
+          'This phone number is already registered.',
+          {
+            field: 'phone',
+          },
+        );
       }
       throw error;
     }
@@ -75,6 +80,7 @@ export const createFinaleRegistration: RequestHandler = async (req, res, next) =
           recipientName: firstNameOf(registration.full_name),
           registrationNumber: registration.registration_number,
           eventDate: EVENT_DATE,
+          eventTime: EVENT_TIME,
           eventVenue: EVENT_VENUE,
           finaleUrl: `${env.APP_URL.replace(/\/$/, '')}/finale`,
           whatsappUrl: WHATSAPP_URL,
@@ -117,11 +123,12 @@ const applySearch = (query: any, rawSearch?: string) => {
 
 const countFinaleRegistrations = async (supabase: any, admitted: boolean | null) => {
   let query = supabase.from('finale_registrations').select('id', { count: 'exact', head: true });
-  query = admitted === true
-    ? query.not('admitted_at', 'is', null)
-    : admitted === false
-      ? query.is('admitted_at', null)
-      : query;
+  query =
+    admitted === true
+      ? query.not('admitted_at', 'is', null)
+      : admitted === false
+        ? query.is('admitted_at', null)
+        : query;
   const { count, error } = await query;
   if (error) throw error;
   return count ?? 0;
@@ -129,7 +136,12 @@ const countFinaleRegistrations = async (supabase: any, admitted: boolean | null)
 
 export const listFinaleRegistrations: RequestHandler = async (req, res, next) => {
   try {
-    const { q, status = 'all', page = 1, limit = 25 } = req.query as unknown as {
+    const {
+      q,
+      status = 'all',
+      page = 1,
+      limit = 25,
+    } = req.query as unknown as {
       q?: string;
       status?: 'all' | 'admitted' | 'awaiting';
       page?: number;
@@ -226,7 +238,15 @@ export const exportFinaleRegistrations: RequestHandler = async (_req, res, next)
       .order('created_at', { ascending: false });
     if (error) throw error;
 
-    const header = ['Registration Number', 'Full Name', 'Email', 'Phone', 'Registered At', 'Status', 'Admitted At'];
+    const header = [
+      'Registration Number',
+      'Full Name',
+      'Email',
+      'Phone',
+      'Registered At',
+      'Status',
+      'Admitted At',
+    ];
     const rows = (data ?? []).map((row: FinaleRegistrationRow) => [
       row.registration_number,
       row.full_name,

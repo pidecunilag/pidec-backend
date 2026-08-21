@@ -1,9 +1,11 @@
 import { createApp } from './app.js';
 import { startSelfPing } from './infrastructure/keep-alive/self-ping.js';
+import { startFinaleReminderScheduler } from './infrastructure/finale/reminder-scheduler.js';
 import { env } from './shared/config/env.js';
 import { logger } from './shared/logger/index.js';
 
 const app = createApp();
+let stopFinaleReminderScheduler: () => void = () => undefined;
 
 const server = app.listen(env.API_PORT, env.API_HOST, () => {
   logger.info(
@@ -11,10 +13,12 @@ const server = app.listen(env.API_PORT, env.API_HOST, () => {
     `PIDEC API listening on http://${env.API_HOST}:${env.API_PORT}`,
   );
   startSelfPing();
+  stopFinaleReminderScheduler = startFinaleReminderScheduler();
 });
 
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'Shutting down gracefully');
+  stopFinaleReminderScheduler();
   server.close((err) => {
     if (err) {
       logger.error({ err }, 'Error during shutdown');

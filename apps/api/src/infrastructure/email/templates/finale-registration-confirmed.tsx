@@ -6,6 +6,7 @@ export const FinaleRegistrationConfirmedEmail = ({
   recipientName,
   registrationNumber,
   eventDate,
+  eventTime,
   eventVenue,
   finaleUrl,
   whatsappUrl,
@@ -21,6 +22,8 @@ export const FinaleRegistrationConfirmedEmail = ({
       Registration number: <strong>{registrationNumber}</strong>
       <br />
       Date: <strong>{eventDate}</strong>
+      <br />
+      Time: <strong>{eventTime}</strong>
       <br />
       Venue: <strong>{eventVenue}</strong>
     </Text>

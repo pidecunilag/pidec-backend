@@ -301,6 +301,20 @@ export interface DbFinaleRegistration {
   updated_at: string;
 }
 
+export interface DbFinaleReminderDelivery {
+  id: string;
+  registration_id: string;
+  reminder_key: '3-days' | '2-days' | '1-day' | 'event-day';
+  status: 'pending' | 'sent' | 'failed';
+  provider_id: string | null;
+  attempt_count: number;
+  claimed_at: string;
+  sent_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Insert / Update helpers ────────────────────────────────────────────────
 type WithDefaults<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 
@@ -476,9 +490,39 @@ export interface Database {
         };
         Update: Partial<Pick<DbFinaleRegistration, 'admitted_at' | 'admitted_by' | 'updated_at'>>;
       };
+      finale_reminder_deliveries: {
+        Row: DbFinaleReminderDelivery;
+        Insert: Partial<DbFinaleReminderDelivery> & {
+          registration_id: string;
+          reminder_key: DbFinaleReminderDelivery['reminder_key'];
+        };
+        Update: Partial<
+          Pick<
+            DbFinaleReminderDelivery,
+            | 'status'
+            | 'provider_id'
+            | 'attempt_count'
+            | 'claimed_at'
+            | 'sent_at'
+            | 'last_error'
+            | 'updated_at'
+          >
+        >;
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      claim_finale_reminder_recipients: {
+        Args: { p_reminder_key: string; p_limit?: number };
+        Returns: Array<{
+          delivery_id: string;
+          registration_id: string;
+          registration_number: string;
+          full_name: string;
+          email: string;
+        }>;
+      };
+    };
     Enums: {
       verification_status: DbVerificationStatus;
       verification_method: DbVerificationMethod;

@@ -96,9 +96,16 @@ export interface FinaleRegistrationConfirmedPayload {
   recipientName: string;
   registrationNumber: string;
   eventDate: string;
+  eventTime: string;
   eventVenue: string;
   finaleUrl: string;
   whatsappUrl: string;
+}
+
+export type FinaleReminderType = '3-days' | '2-days' | '1-day' | 'event-day';
+
+export interface FinaleReminderPayload extends FinaleRegistrationConfirmedPayload {
+  reminderType: FinaleReminderType;
 }
 
 export interface IEmailService {
@@ -139,4 +146,5 @@ export interface IEmailService {
     to: EmailRecipient,
     p: FinaleRegistrationConfirmedPayload,
   ): Promise<EmailDispatchResult>;
+  sendFinaleReminder(to: EmailRecipient, p: FinaleReminderPayload): Promise<EmailDispatchResult>;
 }

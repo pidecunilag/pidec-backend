@@ -6,6 +6,7 @@ import type {
   EmailRecipient,
   EmailVerificationPayload,
   FinaleRegistrationConfirmedPayload,
+  FinaleReminderPayload,
   FeedbackPublishedPayload,
   IEmailService,
   JudgeInvitePayload,
@@ -23,6 +24,7 @@ import { env } from '../../shared/config/env.js';
 import { logger } from '../../shared/logger/index.js';
 import { FeedbackPublishedEmail } from './templates/feedback-published.js';
 import { FinaleRegistrationConfirmedEmail } from './templates/finale-registration-confirmed.js';
+import { FinaleReminderEmail } from './templates/finale-reminder.js';
 import { JudgeInviteEmail } from './templates/judge-invite.js';
 import { PasswordResetEmail } from './templates/password-reset-email.js';
 import { Stage1SubmissionReminderEmail } from './templates/stage1-submission-reminder.js';
@@ -92,7 +94,10 @@ export class ResendEmailService implements IEmailService {
     text: string,
   ): Promise<EmailDispatchResult> {
     if (!this.brevoApiKey) {
-      logger.error({ to: to.to, subject }, 'Brevo fallback skipped because BREVO_API_KEY is not set');
+      logger.error(
+        { to: to.to, subject },
+        'Brevo fallback skipped because BREVO_API_KEY is not set',
+      );
       return { id: '', delivered: false };
     }
 
@@ -181,7 +186,11 @@ export class ResendEmailService implements IEmailService {
   }
 
   sendVerificationFlagged(to: EmailRecipient, p: VerificationFlaggedPayload) {
-    return this.dispatch(to, 'Action required - Manual document review', VerificationFlaggedEmail(p));
+    return this.dispatch(
+      to,
+      'Action required - Manual document review',
+      VerificationFlaggedEmail(p),
+    );
   }
 
   sendTeamInvite(to: EmailRecipient, p: TeamInvitePayload) {
@@ -217,7 +226,11 @@ export class ResendEmailService implements IEmailService {
   }
 
   sendTeamDisqualified(to: EmailRecipient, p: TeamDisqualifiedPayload) {
-    return this.dispatch(to, 'PIDEC 1.0 - Important notice for your team', TeamDisqualifiedEmail(p));
+    return this.dispatch(
+      to,
+      'PIDEC 1.0 - Important notice for your team',
+      TeamDisqualifiedEmail(p),
+    );
   }
 
   sendTeamDissolved(to: EmailRecipient, p: TeamDissolvedPayload) {
@@ -242,6 +255,16 @@ export class ResendEmailService implements IEmailService {
       `You're registered for the PIDEC 1.0 Grand Finale`,
       FinaleRegistrationConfirmedEmail(p),
     );
+  }
+
+  sendFinaleReminder(to: EmailRecipient, p: FinaleReminderPayload) {
+    const subject =
+      p.reminderType === 'event-day'
+        ? "It's D-day - PIDEC 1.0 Grand Finale"
+        : p.reminderType === '1-day'
+          ? 'Tomorrow: PIDEC 1.0 Grand Finale'
+          : `${p.reminderType === '3-days' ? '3' : '2'} days to the PIDEC 1.0 Grand Finale`;
+    return this.dispatch(to, subject, FinaleReminderEmail(p));
   }
 
   sendStage1PendingSubmissionReminder(
