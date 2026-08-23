@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { getLandingData } from '../controllers/landing-content-controller.js';
-import { CreateFinaleRegistrationSchema } from '@pidec/shared';
-import { createFinaleRegistration } from '../controllers/finale-controller.js';
-import { registerRateLimiter } from '../middleware/rate-limit.js';
+import { CreateFinaleRegistrationSchema, LookupFinaleCardSchema } from '@pidec/shared';
+import {
+  createFinaleRegistration,
+  lookupFinaleCardRegistration,
+} from '../controllers/finale-controller.js';
+import { finaleLookupRateLimiter, registerRateLimiter } from '../middleware/rate-limit.js';
 import { validate } from '../middleware/validate.js';
 
 const publicRouter = Router();
@@ -13,6 +16,12 @@ publicRouter.post(
   registerRateLimiter,
   validate(CreateFinaleRegistrationSchema),
   createFinaleRegistration,
+);
+publicRouter.post(
+  '/finale/card-lookup',
+  finaleLookupRateLimiter,
+  validate(LookupFinaleCardSchema),
+  lookupFinaleCardRegistration,
 );
 
 export { publicRouter };

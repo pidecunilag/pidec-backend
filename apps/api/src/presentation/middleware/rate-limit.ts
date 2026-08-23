@@ -101,6 +101,20 @@ export const registerRateLimiter = rateLimit({
   handler: createRateLimitResponse('Registration limit reached, please try again in 10 minutes.'),
 });
 
+export const finaleLookupRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_REGISTRATION_WINDOW_MS,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  ...(redisClient ? {
+    store: new RedisStore({
+      sendCommand: redisSendCommand,
+      prefix: 'rl:finale-lookup:',
+    })
+  } : {}),
+  handler: createRateLimitResponse('Too many card lookup attempts, please try again in 10 minutes.'),
+});
+
 export const loginRateLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_LOGIN_WINDOW_MS,
   limit: env.RATE_LIMIT_LOGIN_MAX,

@@ -82,7 +82,7 @@ export const createFinaleRegistration: RequestHandler = async (req, res, next) =
           eventDate: EVENT_DATE,
           eventTime: EVENT_TIME,
           eventVenue: EVENT_VENUE,
-          finaleUrl: `${env.APP_URL.replace(/\/$/, '')}/finale`,
+          finaleUrl: `${env.APP_URL.replace(/\/$/, '')}/finale/card`,
           whatsappUrl: WHATSAPP_URL,
         },
       ),
@@ -99,6 +99,34 @@ export const createFinaleRegistration: RequestHandler = async (req, res, next) =
         email: registration.email,
         phone: registration.phone,
         createdAt: registration.created_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const lookupFinaleCardRegistration: RequestHandler = async (req, res, next) => {
+  try {
+    const { email } = req.body as { email: string };
+    const supabase = getSupabaseService() as any;
+    const { data, error } = await supabase
+      .from('finale_registrations')
+      .select('registration_number, full_name, email')
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      throw AppError.notFound('No finale registration was found for that email address.');
+    }
+
+    res.json({
+      status: 'success',
+      data: {
+        registrationNumber: data.registration_number,
+        fullName: data.full_name,
+        firstName: firstNameOf(data.full_name),
+        email: data.email,
       },
     });
   } catch (error) {

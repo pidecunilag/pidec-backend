@@ -94,7 +94,7 @@ const sendClaimedBatch = async (
           eventDate: EVENT_DATE,
           eventTime: EVENT_TIME,
           eventVenue: EVENT_VENUE,
-          finaleUrl: `${env.APP_URL.replace(/\/$/, '')}/finale`,
+          finaleUrl: `${env.APP_URL.replace(/\/$/, '')}/finale/card`,
           whatsappUrl: WHATSAPP_URL,
           reminderType,
         },

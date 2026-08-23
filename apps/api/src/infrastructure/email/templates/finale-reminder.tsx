@@ -55,10 +55,19 @@ export const FinaleReminderEmail = ({
         href={finaleUrl}
         className="mt-5 inline-block rounded-md bg-[#2b0640] px-6 py-3 font-medium text-white no-underline"
       >
-        View finale page
+        Create your share card
       </Button>
       <Text className="mt-5 text-[#4d2b60]">
-        Get event updates in the <a href={whatsappUrl}>PIDEC Finale WhatsApp group</a>.
+        Meet other attendees and get event updates in the PIDEC Finale WhatsApp group.
+      </Text>
+      <Button
+        href={whatsappUrl}
+        className="mt-2 inline-block rounded-md bg-[#167447] px-6 py-3 font-medium text-white no-underline"
+      >
+        Join the WhatsApp group
+      </Button>
+      <Text className="mt-3 break-all text-[13px] text-[#6f527d]">
+        WhatsApp group link: <a href={whatsappUrl}>{whatsappUrl}</a>
       </Text>
     </EmailLayout>
   );

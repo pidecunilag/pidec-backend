@@ -12,6 +12,10 @@ export const CreateFinaleRegistrationSchema = z.object({
     .regex(/^\+?[0-9 ()-]+$/, 'Enter a valid phone number'),
 });
 
+export const LookupFinaleCardSchema = z.object({
+  email: EmailSchema,
+});
+
 export const AdminFinaleRegistrationsQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   status: z.enum(['all', 'admitted', 'awaiting']).default('all'),
@@ -28,4 +32,5 @@ export const FinaleRegistrationParamsSchema = z.object({
 });
 
 export type CreateFinaleRegistrationInput = z.infer<typeof CreateFinaleRegistrationSchema>;
+export type LookupFinaleCardInput = z.infer<typeof LookupFinaleCardSchema>;
 export type AdminFinaleRegistrationsQuery = z.infer<typeof AdminFinaleRegistrationsQuerySchema>;
