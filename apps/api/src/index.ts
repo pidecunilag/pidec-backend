@@ -1,11 +1,13 @@
 import { createApp } from './app.js';
 import { startSelfPing } from './infrastructure/keep-alive/self-ping.js';
 import { startFinaleReminderScheduler } from './infrastructure/finale/reminder-scheduler.js';
+import { startFinaleCampaignScheduler } from './infrastructure/finale/campaign-scheduler.js';
 import { env } from './shared/config/env.js';
 import { logger } from './shared/logger/index.js';
 
 const app = createApp();
 let stopFinaleReminderScheduler: () => void = () => undefined;
+let stopFinaleCampaignScheduler: () => void = () => undefined;
 
 const server = app.listen(env.API_PORT, env.API_HOST, () => {
   logger.info(
@@ -14,11 +16,13 @@ const server = app.listen(env.API_PORT, env.API_HOST, () => {
   );
   startSelfPing();
   stopFinaleReminderScheduler = startFinaleReminderScheduler();
+  stopFinaleCampaignScheduler = startFinaleCampaignScheduler();
 });
 
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'Shutting down gracefully');
   stopFinaleReminderScheduler();
+  stopFinaleCampaignScheduler();
   server.close((err) => {
     if (err) {
       logger.error({ err }, 'Error during shutdown');
