@@ -89,13 +89,27 @@ export const getFinaleTomorrowCampaignTestStatus: RequestHandler = async (req, r
       limit: '20',
       sort: 'desc',
     });
-    const response = await fetch(`https://api.brevo.com/v3/smtp/statistics/events?${query}`, {
-      headers: { accept: 'application/json', 'api-key': env.BREVO_API_KEY },
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) throw AppError.internal('Could not retrieve Brevo delivery events.');
+    const headers = { accept: 'application/json', 'api-key': env.BREVO_API_KEY };
+    const [eventsResponse, messagesResponse, blockedResponse] = await Promise.all([
+      fetch(`https://api.brevo.com/v3/smtp/statistics/events?${query}`, { headers }),
+      fetch(
+        `https://api.brevo.com/v3/smtp/emails?${new URLSearchParams({ email: CAMPAIGN_TEST_RECIPIENT, limit: '20', sort: 'desc' })}`,
+        { headers },
+      ),
+      fetch('https://api.brevo.com/v3/smtp/blockedContacts?limit=100&sort=desc', { headers }),
+    ]);
+    const [events, messages, blocked] = await Promise.all([
+      eventsResponse.json().catch(() => null),
+      messagesResponse.json().catch(() => null),
+      blockedResponse.json().catch(() => null),
+    ]);
+    if (!eventsResponse.ok || !messagesResponse.ok || !blockedResponse.ok) {
+      throw AppError.internal('Could not retrieve Brevo delivery diagnostics.');
+    }
 
-    res.json({ status: 'success', data: body });
+    const blockedContacts = ((blocked as { contacts?: Array<{ email?: string }> } | null)?.contacts ?? [])
+      .filter((contact) => contact.email?.toLowerCase() === CAMPAIGN_TEST_RECIPIENT);
+    res.json({ status: 'success', data: { events, messages, blockedContacts } });
   } catch (error) {
     next(error);
   }
