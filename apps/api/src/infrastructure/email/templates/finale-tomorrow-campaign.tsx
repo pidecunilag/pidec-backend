@@ -19,15 +19,15 @@ export const FinaleTomorrowCampaignEmail = ({
   finaleUrl,
   whatsappUrl,
 }: FinaleTomorrowCampaignPayload) => (
-  <EmailLayout preview="Final pitches, ₦200,000 in giveaways, Huawei opportunities and more await you tomorrow.">
+  <EmailLayout preview="Final pitches, ₦200,000 in giveaways, Huawei opportunities and more await you today.">
     <Artwork src="grand-finale.jpg" alt="PIDEC 1.0 Grand Finale" />
 
     <Text className="mt-0 text-[#4d2b60]">Hi {recipientName},</Text>
     <Heading className="m-0 text-[25px] font-bold leading-[1.3] text-[#2b0640]">
-      Tomorrow: witness PIDEC 1.0's final pitches
+      Today: witness PIDEC 1.0's final pitches
     </Heading>
     <Text className="mt-4 text-[#4d2b60]">
-      Tomorrow, the <strong>PIDEC 1.0 finalist teams</strong> take the stage to pitch the
+      Today, the <strong>PIDEC 1.0 finalist teams</strong> take the stage to pitch the
       engineering solutions they have developed to create meaningful, sustainable impact.
     </Text>
     <Text className="mt-3 text-[#4d2b60]">
@@ -112,7 +112,7 @@ export const FinaleTomorrowCampaignEmail = ({
       Come early. Watch the ideas come alive. Connect, learn and stand a chance to win.
     </Text>
     <Text className="mb-0 mt-5 text-[#4d2b60]">
-      See you tomorrow,
+      See you today,
       <br />
       <strong>Faisal Adams</strong>
       <br />

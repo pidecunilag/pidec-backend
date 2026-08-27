@@ -151,7 +151,7 @@ export const startFinaleCampaignScheduler = () => {
   const interval = setInterval(() => void runFinaleCampaignTick(), POLL_INTERVAL_MS);
   interval.unref();
   logger.info(
-    { campaignKey: CAMPAIGN_KEY, scheduledFor: '2026-08-28 00:01 WAT' },
+    { campaignKey: CAMPAIGN_KEY, scheduledFor: '2026-08-28 06:30 WAT' },
     'Finale campaign scheduler started',
   );
   return () => clearInterval(interval);

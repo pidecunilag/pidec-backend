@@ -20,12 +20,7 @@ const schedules: ReminderSchedule[] = [
   {
     key: '1-day',
     startsAt: Date.parse('2026-08-27T08:00:00.000Z'),
-    endsAt: Date.parse('2026-08-28T07:00:00.000Z'),
-  },
-  {
-    key: 'event-day',
-    startsAt: Date.parse('2026-08-28T07:00:00.000Z'),
-    endsAt: Date.parse('2026-08-28T23:00:00.000Z'),
+    endsAt: Date.parse('2026-08-28T05:30:00.000Z'),
   },
 ];
 

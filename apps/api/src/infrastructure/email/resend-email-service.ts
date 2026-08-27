@@ -272,7 +272,7 @@ export class ResendEmailService implements IEmailService {
   sendFinaleTomorrowCampaign(to: EmailRecipient, p: FinaleTomorrowCampaignPayload) {
     return this.dispatch(
       to,
-      "Tomorrow: Witness PIDEC 1.0's Final Pitches and Compete for ₦200,000 in Giveaways",
+      "Today: Witness PIDEC 1.0's Final Pitches and Compete for ₦200,000 in Giveaways",
       FinaleTomorrowCampaignEmail(p),
     );
   }
@@ -291,7 +291,7 @@ export class ResendEmailService implements IEmailService {
         from: this.fromAddress,
         to: to.name ? `${to.name} <${to.to}>` : to.to,
         subject:
-          "[TEST] Tomorrow: Witness PIDEC 1.0's Final Pitches and Compete for ₦200,000 in Giveaways",
+          "[TEST] Today: Witness PIDEC 1.0's Final Pitches and Compete for ₦200,000 in Giveaways",
         html,
         text,
       });

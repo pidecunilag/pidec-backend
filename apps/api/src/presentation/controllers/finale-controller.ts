@@ -168,7 +168,7 @@ export const getFinaleTomorrowCampaignScheduleStatus: RequestHandler = async (re
       status: 'success',
       data: {
         campaignKey: 'finale-tomorrow-midnight',
-        scheduledFor: '2026-08-28T00:01:00+01:00',
+        scheduledFor: '2026-08-28T06:30:00+01:00',
         active: isFinaleTomorrowCampaignActive(now),
         checkedAt: now.toISOString(),
         registrations: registrationsResult.count ?? 0,
