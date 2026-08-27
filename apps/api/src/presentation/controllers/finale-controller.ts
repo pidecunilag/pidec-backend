@@ -23,6 +23,20 @@ type FinaleRegistrationRow = {
   updated_at: string;
 };
 
+type FinaleRegistrationStats = {
+  total: number;
+  admitted: number;
+  awaiting: number;
+};
+
+const FINALE_STATS_CACHE_MS = 10_000;
+let finaleStatsCache: { value: FinaleRegistrationStats; expiresAt: number } | null = null;
+let finaleStatsRequest: Promise<FinaleRegistrationStats> | null = null;
+
+const invalidateFinaleStats = () => {
+  finaleStatsCache = null;
+};
+
 const normalizePhone = (value: string): string => {
   const digits = value.replace(/\D/g, '');
   if (digits.startsWith('234') && digits.length === 13) return `+${digits}`;
@@ -73,6 +87,7 @@ export const createFinaleRegistration: RequestHandler = async (req, res, next) =
     }
 
     const registration = data as FinaleRegistrationRow;
+    invalidateFinaleStats();
     fireAndForget(
       getEmailService().sendFinaleRegistrationConfirmed(
         { to: registration.email, name: registration.full_name },
@@ -162,6 +177,29 @@ const countFinaleRegistrations = async (supabase: any, admitted: boolean | null)
   return count ?? 0;
 };
 
+const getFinaleRegistrationStats = async (supabase: any): Promise<FinaleRegistrationStats> => {
+  if (finaleStatsCache && finaleStatsCache.expiresAt > Date.now()) {
+    return finaleStatsCache.value;
+  }
+  if (finaleStatsRequest) return finaleStatsRequest;
+
+  finaleStatsRequest = Promise.all([
+    countFinaleRegistrations(supabase, null),
+    countFinaleRegistrations(supabase, true),
+    countFinaleRegistrations(supabase, false),
+  ])
+    .then(([total, admitted, awaiting]) => {
+      const value = { total, admitted, awaiting };
+      finaleStatsCache = { value, expiresAt: Date.now() + FINALE_STATS_CACHE_MS };
+      return value;
+    })
+    .finally(() => {
+      finaleStatsRequest = null;
+    });
+
+  return finaleStatsRequest;
+};
+
 export const listFinaleRegistrations: RequestHandler = async (req, res, next) => {
   try {
     const {
@@ -185,11 +223,9 @@ export const listFinaleRegistrations: RequestHandler = async (req, res, next) =>
       .range(offset, offset + limit - 1);
     query = applyStatusFilter(applySearch(query, q), status);
 
-    const [{ data, count, error }, total, admitted, awaiting] = await Promise.all([
+    const [{ data, count, error }, stats] = await Promise.all([
       query,
-      countFinaleRegistrations(supabase, null),
-      countFinaleRegistrations(supabase, true),
-      countFinaleRegistrations(supabase, false),
+      getFinaleRegistrationStats(supabase),
     ]);
     if (error) throw error;
 
@@ -197,7 +233,7 @@ export const listFinaleRegistrations: RequestHandler = async (req, res, next) =>
       status: 'success',
       data: {
         registrations: data ?? [],
-        stats: { total, admitted, awaiting },
+        stats,
         pagination: {
           page,
           limit,
@@ -248,6 +284,8 @@ export const setFinaleAdmission: RequestHandler = async (req, res, next) => {
       user_agent: req.get('user-agent') ?? null,
     });
     if (logError) throw logError;
+
+    invalidateFinaleStats();
 
     res.json({ status: 'success', data: updated });
   } catch (error) {
