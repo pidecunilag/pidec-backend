@@ -277,6 +277,32 @@ export class ResendEmailService implements IEmailService {
     );
   }
 
+  async sendFinaleTomorrowCampaignViaResendOnly(
+    to: EmailRecipient,
+    p: FinaleTomorrowCampaignPayload,
+  ): Promise<EmailDispatchResult & { error?: unknown }> {
+    if (!this.resend) return { id: '', delivered: false, error: 'Resend is not configured' };
+
+    const template = FinaleTomorrowCampaignEmail(p);
+    const html = await render(template);
+    const text = await render(template, { plainText: true });
+    try {
+      const { data, error } = await this.resend.emails.send({
+        from: this.fromAddress,
+        to: to.name ? `${to.name} <${to.to}>` : to.to,
+        subject:
+          "[TEST] Tomorrow: Witness PIDEC 1.0's Final Pitches and Compete for ₦200,000 in Giveaways",
+        html,
+        text,
+      });
+      return error
+        ? { id: '', delivered: false, error }
+        : { id: data?.id ?? '', delivered: true };
+    } catch (error) {
+      return { id: '', delivered: false, error: error instanceof Error ? error.message : error };
+    }
+  }
+
   sendStage1PendingSubmissionReminder(
     to: EmailRecipient,
     p: { recipientName: string; teamName: string; daysLeft: number; deadlineLabel: string },

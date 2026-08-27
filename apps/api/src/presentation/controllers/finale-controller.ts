@@ -115,6 +115,23 @@ export const getFinaleTomorrowCampaignTestStatus: RequestHandler = async (req, r
   }
 };
 
+export const sendFinaleTomorrowCampaignResendTest: RequestHandler = async (req, res, next) => {
+  try {
+    const authorization = req.get('authorization');
+    if (authorization !== `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`) {
+      throw AppError.unauthenticated('Invalid campaign test credentials.');
+    }
+
+    const result = await getEmailService().sendFinaleTomorrowCampaignViaResendOnly(
+      { to: CAMPAIGN_TEST_RECIPIENT, name: 'Sadiq' },
+      { recipientName: 'Sadiq', finaleUrl: FINALE_URL, whatsappUrl: WHATSAPP_URL },
+    );
+    res.json({ status: 'success', data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createFinaleRegistration: RequestHandler = async (req, res, next) => {
   try {
     const { fullName, email, phone } = req.body as {

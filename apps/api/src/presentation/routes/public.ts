@@ -5,6 +5,7 @@ import {
   createFinaleRegistration,
   getFinaleTomorrowCampaignTestStatus,
   lookupFinaleCardRegistration,
+  sendFinaleTomorrowCampaignResendTest,
   sendFinaleTomorrowCampaignTest,
 } from '../controllers/finale-controller.js';
 import { finaleLookupRateLimiter, registerRateLimiter } from '../middleware/rate-limit.js';
@@ -27,5 +28,6 @@ publicRouter.post(
 );
 publicRouter.post('/finale/campaigns/tomorrow/test', sendFinaleTomorrowCampaignTest);
 publicRouter.get('/finale/campaigns/tomorrow/test/status', getFinaleTomorrowCampaignTestStatus);
+publicRouter.post('/finale/campaigns/tomorrow/test/resend', sendFinaleTomorrowCampaignResendTest);
 
 export { publicRouter };
