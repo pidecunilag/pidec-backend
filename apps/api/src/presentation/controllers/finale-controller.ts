@@ -75,6 +75,32 @@ export const sendFinaleTomorrowCampaignTest: RequestHandler = async (req, res, n
   }
 };
 
+export const getFinaleTomorrowCampaignTestStatus: RequestHandler = async (req, res, next) => {
+  try {
+    const authorization = req.get('authorization');
+    if (authorization !== `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`) {
+      throw AppError.unauthenticated('Invalid campaign test credentials.');
+    }
+    if (!env.BREVO_API_KEY) throw AppError.internal('Brevo is not configured.');
+
+    const query = new URLSearchParams({
+      email: CAMPAIGN_TEST_RECIPIENT,
+      days: '1',
+      limit: '20',
+      sort: 'desc',
+    });
+    const response = await fetch(`https://api.brevo.com/v3/smtp/statistics/events?${query}`, {
+      headers: { accept: 'application/json', 'api-key': env.BREVO_API_KEY },
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw AppError.internal('Could not retrieve Brevo delivery events.');
+
+    res.json({ status: 'success', data: body });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createFinaleRegistration: RequestHandler = async (req, res, next) => {
   try {
     const { fullName, email, phone } = req.body as {

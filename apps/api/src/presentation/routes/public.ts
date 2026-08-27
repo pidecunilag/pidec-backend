@@ -3,6 +3,7 @@ import { getLandingData } from '../controllers/landing-content-controller.js';
 import { CreateFinaleRegistrationSchema, LookupFinaleCardSchema } from '@pidec/shared';
 import {
   createFinaleRegistration,
+  getFinaleTomorrowCampaignTestStatus,
   lookupFinaleCardRegistration,
   sendFinaleTomorrowCampaignTest,
 } from '../controllers/finale-controller.js';
@@ -25,5 +26,6 @@ publicRouter.post(
   lookupFinaleCardRegistration,
 );
 publicRouter.post('/finale/campaigns/tomorrow/test', sendFinaleTomorrowCampaignTest);
+publicRouter.get('/finale/campaigns/tomorrow/test/status', getFinaleTomorrowCampaignTestStatus);
 
 export { publicRouter };
