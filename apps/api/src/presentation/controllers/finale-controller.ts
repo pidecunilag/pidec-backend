@@ -5,6 +5,7 @@ import { getEmailService } from '../../infrastructure/email/resend-email-service
 import { fireAndForget } from '../../infrastructure/email/async-dispatch.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { env } from '../../shared/config/env.js';
+import { isFinaleTomorrowCampaignActive } from '../../infrastructure/finale/campaign-schedule.js';
 
 const EVENT_DATE = 'Friday, 28 August 2026';
 const EVENT_TIME = '9:00 AM';
@@ -127,6 +128,55 @@ export const sendFinaleTomorrowCampaignResendTest: RequestHandler = async (req, 
       { recipientName: 'Sadiq', finaleUrl: FINALE_URL, whatsappUrl: WHATSAPP_URL },
     );
     res.json({ status: 'success', data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getFinaleTomorrowCampaignScheduleStatus: RequestHandler = async (req, res, next) => {
+  try {
+    const authorization = req.get('authorization');
+    if (authorization !== `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`) {
+      throw AppError.unauthenticated('Invalid campaign status credentials.');
+    }
+
+    const supabase = getSupabaseService() as any;
+    const [registrationsResult, sentResult, pendingResult, failedResult] = await Promise.all([
+      supabase.from('finale_registrations').select('id', { count: 'exact', head: true }),
+      supabase
+        .from('finale_campaign_deliveries')
+        .select('id', { count: 'exact', head: true })
+        .eq('campaign_key', 'finale-tomorrow-midnight')
+        .eq('status', 'sent'),
+      supabase
+        .from('finale_campaign_deliveries')
+        .select('id', { count: 'exact', head: true })
+        .eq('campaign_key', 'finale-tomorrow-midnight')
+        .eq('status', 'pending'),
+      supabase
+        .from('finale_campaign_deliveries')
+        .select('id', { count: 'exact', head: true })
+        .eq('campaign_key', 'finale-tomorrow-midnight')
+        .eq('status', 'failed'),
+    ]);
+    const queryError =
+      registrationsResult.error ?? sentResult.error ?? pendingResult.error ?? failedResult.error;
+    if (queryError) throw queryError;
+
+    const now = new Date();
+    res.json({
+      status: 'success',
+      data: {
+        campaignKey: 'finale-tomorrow-midnight',
+        scheduledFor: '2026-08-28T00:01:00+01:00',
+        active: isFinaleTomorrowCampaignActive(now),
+        checkedAt: now.toISOString(),
+        registrations: registrationsResult.count ?? 0,
+        sent: sentResult.count ?? 0,
+        pending: pendingResult.count ?? 0,
+        failed: failedResult.count ?? 0,
+      },
+    });
   } catch (error) {
     next(error);
   }

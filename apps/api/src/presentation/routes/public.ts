@@ -4,6 +4,7 @@ import { CreateFinaleRegistrationSchema, LookupFinaleCardSchema } from '@pidec/s
 import {
   createFinaleRegistration,
   getFinaleTomorrowCampaignTestStatus,
+  getFinaleTomorrowCampaignScheduleStatus,
   lookupFinaleCardRegistration,
   sendFinaleTomorrowCampaignResendTest,
   sendFinaleTomorrowCampaignTest,
@@ -29,5 +30,9 @@ publicRouter.post(
 publicRouter.post('/finale/campaigns/tomorrow/test', sendFinaleTomorrowCampaignTest);
 publicRouter.get('/finale/campaigns/tomorrow/test/status', getFinaleTomorrowCampaignTestStatus);
 publicRouter.post('/finale/campaigns/tomorrow/test/resend', sendFinaleTomorrowCampaignResendTest);
+publicRouter.get(
+  '/finale/campaigns/tomorrow/schedule',
+  getFinaleTomorrowCampaignScheduleStatus,
+);
 
 export { publicRouter };
