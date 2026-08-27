@@ -108,6 +108,12 @@ export interface FinaleReminderPayload extends FinaleRegistrationConfirmedPayloa
   reminderType: FinaleReminderType;
 }
 
+export interface FinaleTomorrowCampaignPayload {
+  recipientName: string;
+  finaleUrl: string;
+  whatsappUrl: string;
+}
+
 export interface IEmailService {
   sendVerificationApproved(
     to: EmailRecipient,
@@ -147,4 +153,8 @@ export interface IEmailService {
     p: FinaleRegistrationConfirmedPayload,
   ): Promise<EmailDispatchResult>;
   sendFinaleReminder(to: EmailRecipient, p: FinaleReminderPayload): Promise<EmailDispatchResult>;
+  sendFinaleTomorrowCampaign(
+    to: EmailRecipient,
+    p: FinaleTomorrowCampaignPayload,
+  ): Promise<EmailDispatchResult>;
 }

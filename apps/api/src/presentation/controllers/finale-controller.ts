@@ -10,6 +10,8 @@ const EVENT_DATE = 'Friday, 28 August 2026';
 const EVENT_TIME = '9:00 AM';
 const EVENT_VENUE = 'J.F. Ajayi Auditorium, University of Lagos';
 const WHATSAPP_URL = 'https://chat.whatsapp.com/Fs4FQGkmTE48dAwt6fb4DY';
+const FINALE_URL = 'https://pidec.com.ng/finale';
+const CAMPAIGN_TEST_RECIPIENT = 'sadiqadetola08@gmail.com';
 
 type FinaleRegistrationRow = {
   id: string;
@@ -46,6 +48,32 @@ const normalizePhone = (value: string): string => {
 };
 
 const firstNameOf = (fullName: string): string => fullName.trim().split(/\s+/)[0] ?? fullName;
+
+export const sendFinaleTomorrowCampaignTest: RequestHandler = async (req, res, next) => {
+  try {
+    const authorization = req.get('authorization');
+    if (authorization !== `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`) {
+      throw AppError.unauthenticated('Invalid campaign test credentials.');
+    }
+
+    const result = await getEmailService().sendFinaleTomorrowCampaign(
+      { to: CAMPAIGN_TEST_RECIPIENT, name: 'Sadiq' },
+      {
+        recipientName: 'Sadiq',
+        finaleUrl: FINALE_URL,
+        whatsappUrl: WHATSAPP_URL,
+      },
+    );
+
+    if (!result.delivered) {
+      throw AppError.internal('Email provider did not accept the test.');
+    }
+
+    res.json({ status: 'success', data: { delivered: true, providerId: result.id } });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const createFinaleRegistration: RequestHandler = async (req, res, next) => {
   try {

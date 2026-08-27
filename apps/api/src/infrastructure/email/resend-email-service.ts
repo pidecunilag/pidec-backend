@@ -7,6 +7,7 @@ import type {
   EmailVerificationPayload,
   FinaleRegistrationConfirmedPayload,
   FinaleReminderPayload,
+  FinaleTomorrowCampaignPayload,
   FeedbackPublishedPayload,
   IEmailService,
   JudgeInvitePayload,
@@ -25,6 +26,7 @@ import { logger } from '../../shared/logger/index.js';
 import { FeedbackPublishedEmail } from './templates/feedback-published.js';
 import { FinaleRegistrationConfirmedEmail } from './templates/finale-registration-confirmed.js';
 import { FinaleReminderEmail } from './templates/finale-reminder.js';
+import { FinaleTomorrowCampaignEmail } from './templates/finale-tomorrow-campaign.js';
 import { JudgeInviteEmail } from './templates/judge-invite.js';
 import { PasswordResetEmail } from './templates/password-reset-email.js';
 import { Stage1SubmissionReminderEmail } from './templates/stage1-submission-reminder.js';
@@ -265,6 +267,14 @@ export class ResendEmailService implements IEmailService {
           ? 'Tomorrow: PIDEC 1.0 Grand Finale'
           : `${p.reminderType === '3-days' ? '3' : '2'} days to the PIDEC 1.0 Grand Finale`;
     return this.dispatch(to, subject, FinaleReminderEmail(p));
+  }
+
+  sendFinaleTomorrowCampaign(to: EmailRecipient, p: FinaleTomorrowCampaignPayload) {
+    return this.dispatch(
+      to,
+      "Tomorrow: Witness PIDEC 1.0's Final Pitches and Compete for ₦200,000 in Giveaways",
+      FinaleTomorrowCampaignEmail(p),
+    );
   }
 
   sendStage1PendingSubmissionReminder(

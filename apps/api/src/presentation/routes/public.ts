@@ -4,6 +4,7 @@ import { CreateFinaleRegistrationSchema, LookupFinaleCardSchema } from '@pidec/s
 import {
   createFinaleRegistration,
   lookupFinaleCardRegistration,
+  sendFinaleTomorrowCampaignTest,
 } from '../controllers/finale-controller.js';
 import { finaleLookupRateLimiter, registerRateLimiter } from '../middleware/rate-limit.js';
 import { validate } from '../middleware/validate.js';
@@ -23,5 +24,6 @@ publicRouter.post(
   validate(LookupFinaleCardSchema),
   lookupFinaleCardRegistration,
 );
+publicRouter.post('/finale/campaigns/tomorrow/test', sendFinaleTomorrowCampaignTest);
 
 export { publicRouter };
