@@ -69,6 +69,9 @@ const getGlobalRateLimit = (req: Request): number => {
   }
 };
 
+const isFinaleRegistrationRequest = (req: Request): boolean =>
+  req.method === 'POST' && req.path === '/api/v1/public/finale/registrations';
+
 const redisSendCommand = (...args: string[]): Promise<RedisReply> =>
   redisClient?.call(args[0]!, ...args.slice(1)) as Promise<RedisReply>;
 
@@ -78,6 +81,7 @@ export const globalRateLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: getRateLimitKey,
+  skip: isFinaleRegistrationRequest,
   ...(redisClient ? {
     store: new RedisStore({
       sendCommand: redisSendCommand,
@@ -98,6 +102,22 @@ export const registerRateLimiter = rateLimit({
       prefix: 'rl:register:',
     })
   } : {}),
+  handler: createRateLimitResponse('Registration limit reached, please try again in 10 minutes.'),
+});
+
+export const finaleRegistrationRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_REGISTRATION_WINDOW_MS,
+  limit: 1_500,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  ...(redisClient
+    ? {
+        store: new RedisStore({
+          sendCommand: redisSendCommand,
+          prefix: 'rl:finale-register-v2:',
+        }),
+      }
+    : {}),
   handler: createRateLimitResponse('Registration limit reached, please try again in 10 minutes.'),
 });
 

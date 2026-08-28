@@ -9,7 +9,10 @@ import {
   sendFinaleTomorrowCampaignResendTest,
   sendFinaleTomorrowCampaignTest,
 } from '../controllers/finale-controller.js';
-import { finaleLookupRateLimiter, registerRateLimiter } from '../middleware/rate-limit.js';
+import {
+  finaleLookupRateLimiter,
+  finaleRegistrationRateLimiter,
+} from '../middleware/rate-limit.js';
 import { validate } from '../middleware/validate.js';
 
 const publicRouter = Router();
@@ -17,7 +20,7 @@ const publicRouter = Router();
 publicRouter.get('/landing-data', getLandingData);
 publicRouter.post(
   '/finale/registrations',
-  registerRateLimiter,
+  finaleRegistrationRateLimiter,
   validate(CreateFinaleRegistrationSchema),
   createFinaleRegistration,
 );
